@@ -71,13 +71,31 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
         ).to(args.local_rank)
         ids = [ex.example_id for ex in examples]
         source_mask = source_ids.ne(tokenizer.pad_id)
-        preds = model.generate(source_ids,
+        outputs = model.generate(source_ids,
                                attention_mask=source_mask,
                                use_cache=True,
                                num_beams=args.beam_size,
                                early_stopping=True,
-                               max_length=args.max_target_length)
+                               max_length=args.max_target_length,
+                               output_attentions=True,
+                               output_hidden_states=True,
+                               output_scores=True,
+                               return_dict_in_generate=True)
+
+
+
+
+        preds = outputs.sequences
         top_preds = list(preds.cpu().numpy())
+
+        # 计算概率
+        logits = outputs.scores
+        probs = [torch.softmax(log, dim=-1) for log in logits]
+
+        for i, token_id in enumerate(top_preds[0][2:]):
+            token_nls = tokenizer.decode(token_id, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+            token_pron = probs[i][0, token_id].item()
+            print(f"Token ID: {token_id}, Token nls: {token_nls}, Probability: {token_pron}")
         pred_ids.extend(top_preds)
 
     # 解码预测结果和参考答案
