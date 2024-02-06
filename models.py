@@ -32,11 +32,11 @@ class ReviewerModel(T5ForConditionalGeneration):
         nn.init.xavier_uniform_(self.lm_head.weight)
         factor = self.config.initializer_factor
         self.cls_head.weight.data.normal_(mean=0.0, \
-            std=factor * ((self.config.d_model) ** -0.5))
+                                          std=factor * ((self.config.d_model) ** -0.5))
         self.cls_head.bias.data.zero_()
 
     def forward(
-        self, *argv, **kwargs
+            self, *argv, **kwargs
     ):
         r"""
         Doc from Huggingface transformers:
@@ -63,9 +63,9 @@ class ReviewerModel(T5ForConditionalGeneration):
         """
         if "cls" in kwargs:
             assert (
-                "input_ids" in kwargs and \
-                "labels" in kwargs and \
-                "attention_mask" in kwargs
+                    "input_ids" in kwargs and \
+                    "labels" in kwargs and \
+                    "attention_mask" in kwargs
             )
             return self.cls(
                 input_ids=kwargs["input_ids"],
@@ -74,11 +74,11 @@ class ReviewerModel(T5ForConditionalGeneration):
             )
         if "input_labels" in kwargs:
             assert (
-                "input_ids" in kwargs and \
-                "input_labels" in kwargs and \
-                "decoder_input_ids" in kwargs and \
-                "attention_mask" in kwargs and \
-                "decoder_attention_mask" in kwargs
+                    "input_ids" in kwargs and \
+                    "input_labels" in kwargs and \
+                    "decoder_input_ids" in kwargs and \
+                    "attention_mask" in kwargs and \
+                    "decoder_attention_mask" in kwargs
             ), "Please give these arg keys."
             input_ids = kwargs["input_ids"]
             input_labels = kwargs["input_labels"]
@@ -89,14 +89,15 @@ class ReviewerModel(T5ForConditionalGeneration):
                 encoder_loss = True
             else:
                 encoder_loss = kwargs["encoder_loss"]
-            return self.review_forward(input_ids, input_labels, decoder_input_ids, attention_mask, decoder_attention_mask, encoder_loss)
+            return self.review_forward(input_ids, input_labels, decoder_input_ids, attention_mask,
+                                       decoder_attention_mask, encoder_loss)
         return super().forward(*argv, **kwargs)
 
     def cls(
-        self,
-        input_ids,
-        labels,
-        attention_mask,
+            self,
+            input_ids,
+            labels,
+            attention_mask,
     ):
         encoder_outputs = self.encoder( \
             input_ids=input_ids,
@@ -115,13 +116,13 @@ class ReviewerModel(T5ForConditionalGeneration):
         return logits
 
     def review_forward(
-        self,
-        input_ids,
-        input_labels,
-        decoder_input_ids,
-        attention_mask,
-        decoder_attention_mask,
-        encoder_loss=True
+            self,
+            input_ids,
+            input_labels,
+            decoder_input_ids,
+            attention_mask,
+            decoder_attention_mask,
+            encoder_loss=True
     ):
         encoder_outputs = self.encoder( \
             input_ids=input_ids,
@@ -141,7 +142,7 @@ class ReviewerModel(T5ForConditionalGeneration):
             return_dict=False
         )
         sequence_output = decoder_outputs[0]
-        if self.config.tie_word_embeddings: # this is True default
+        if self.config.tie_word_embeddings:  # this is True default
             sequence_output = sequence_output * (self.model_dim ** -0.5)
         if encoder_loss:
             # print(self.encoder.get_input_embeddings().weight.shape)
@@ -149,13 +150,14 @@ class ReviewerModel(T5ForConditionalGeneration):
             # cls_logits = self.cls_head(hidden_states)
         lm_logits = self.lm_head(sequence_output)
         if decoder_input_ids is not None:
-            lm_loss_fct = CrossEntropyLoss(ignore_index=0)      # Warning: PAD_ID should be 0
+            lm_loss_fct = CrossEntropyLoss(ignore_index=0)  # Warning: PAD_ID should be 0
             loss = lm_loss_fct(lm_logits.view(-1, lm_logits.size(-1)), decoder_input_ids.view(-1))
             if encoder_loss and input_labels is not None:
                 cls_loss_fct = CrossEntropyLoss(ignore_index=-100)
                 loss += cls_loss_fct(cls_logits.view(-1, cls_logits.size(-1)), input_labels.view(-1))
             return loss
         return cls_logits, lm_logits
+
 
 def get_model_size(model):
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
@@ -164,16 +166,20 @@ def get_model_size(model):
 
 
 def build_or_load_gen_model(args):
+    # 使用指定的配置类、模型类和分词器类来创建实例
     config_class, model_class, tokenizer_class = T5Config, ReviewerModel, RobertaTokenizer
-    
+
+    # 从预训练模型路径加载配置信息、分词器和模型
     config = config_class.from_pretrained(args.model_name_or_path)
     tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path)
     model = model_class.from_pretrained(args.model_name_or_path, config=config)
 
+    # 为特殊标记创建特殊字典
     tokenizer.special_dict = {
-        f"<e{i}>" : tokenizer.get_vocab()[f"<e{i}>"] for i in range(99, -1, -1)
+        f"<e{i}>": tokenizer.get_vocab()[f"<e{i}>"] for i in range(99, -1, -1)
     }
 
+    # 设置特殊标记的索引
     tokenizer.mask_id = tokenizer.get_vocab()["<mask>"]
     tokenizer.bos_id = tokenizer.get_vocab()["<s>"]
     tokenizer.pad_id = tokenizer.get_vocab()["<pad>"]
@@ -185,24 +191,28 @@ def build_or_load_gen_model(args):
     tokenizer.start_id = tokenizer.get_vocab()["<start>"]
     tokenizer.end_id = tokenizer.get_vocab()["<end>"]
 
+    # 打印模型加载信息
     logger.info(
         "Finish loading model [%s] from %s",
         get_model_size(model),
         args.model_name_or_path,
     )
 
+    # 如果指定了加载模型的路径，则重新加载模型参数
     if args.load_model_path is not None:
+        # 拼接模型路径
         model_path = os.path.join(args.load_model_path, "pytorch_model.bin")
         logger.info("Reload model from {}".format(model_path))
         try:
+            # 尝试加载模型参数
             model.load_state_dict(torch.load(model_path, map_location="cpu"))
         except RuntimeError:
+            # 如果出现 RuntimeError，尝试加载模型参数并忽略 cls_head 部分
             saved = model.cls_head
             model.cls_head = None
             model.load_state_dict(torch.load(model_path, map_location="cpu"))
             model.cls_head = saved
+        # 将模型移动到指定的设备上
         model.to(args.local_rank)
 
     return config, model, tokenizer
-
-

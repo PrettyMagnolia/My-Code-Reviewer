@@ -20,7 +20,7 @@ python -m torch.distributed.run --nproc_per_node ${PER_NODE_GPU} --node_rank=${R
   --output_dir ../../save/gen \
   --load_model_path 'E:\3_研究生\Code\CodeReviewer\3_Pretrained_Model' \
   --output_dir empty \
-  --eval_file 'E:\3_研究生\Code\CodeReviewer\2_Dataset\Comment_Generation\msg-test.jsonl' \
+  --eval_file 'E:\3_研究生\Code\CodeReviewer\2_Dataset\Comment_Generation\msg-test-small.jsonl' \
   --max_source_length 512 \
   --max_target_length 128 \
   --eval_batch_size 1 \

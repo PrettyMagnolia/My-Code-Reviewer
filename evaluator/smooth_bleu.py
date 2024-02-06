@@ -163,17 +163,28 @@ def splitPuncts(line):
 
 
 def bleu_fromstr(predictions, golds, rmstop=True):
+    # 对预测结果和参考答案进行分词处理
     predictions = [" ".join(nltk.wordpunct_tokenize(predictions[i])) for i in range(len(predictions))]
     golds = [" ".join(nltk.wordpunct_tokenize(g)) for g in golds]
+
+    # 如果需要移除停用词，则从文件中读取停用词列表并进行移除
     if rmstop:
+        # 获取当前文件的路径
         pypath = os.path.dirname(os.path.realpath(__file__))
+        # 读取停用词文件中的停用词列表
         stopwords = open(os.path.join(pypath, "stopwords.txt")).readlines()
         stopwords = [stopword.strip() for stopword in stopwords]
+        # 对参考答案和预测结果中的单词进行停用词移除
         golds = [" ".join([word for word in ref.split() if word not in stopwords]) for ref in golds]
         predictions = [" ".join([word for word in hyp.split() if word not in stopwords]) for hyp in predictions]
+
+    # 将预测结果和参考答案格式化为模型期望的形式
     predictions = [str(i) + "\t" + pred.replace("\t", " ") for (i, pred) in enumerate(predictions)]
     golds = [str(i) + "\t" + gold.replace("\t", " ") for (i, gold) in enumerate(golds)]
+
+    # 计算预测结果与参考答案之间的映射关系
     goldMap, predictionMap = computeMaps(predictions, golds)
+    # 计算BLEU值并保留两位小数
     bleu = round(bleuFromMaps(goldMap, predictionMap)[0], 2)
     return bleu
 
