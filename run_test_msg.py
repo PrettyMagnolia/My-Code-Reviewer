@@ -74,22 +74,34 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
         outputs = model.generate(source_ids,
                                attention_mask=source_mask,
                                use_cache=True,
-                               num_beams=args.beam_size,
+                               # num_beams=args.beam_size,
                                early_stopping=True,
                                max_length=args.max_target_length,
                                output_attentions=True,
                                output_hidden_states=True,
                                output_scores=True,
                                return_dict_in_generate=True)
-
-
-
-
         preds = outputs.sequences
+        logits = outputs.scores
+        cross_attentions = outputs.cross_attentions
+        encoder_attentions = outputs.encoder_attentions
+        decoder_attentions = outputs.decoder_attentions
+
+        # 获取预测结果的长度 前两位为起始标志 因此真正的序列长度要-2
+        seq_len = preds.size(1) - 2
+        # 使用贪婪搜索时 cross_attention的长度为 seq_len+1
+        for i in range(len(cross_attentions)):
+            # 生成第i个token时注意力的情况
+            cur_attentions = cross_attentions[i]
+            for j in range(len(cur_attentions)):
+                # 第j层的注意力
+                print("生成第{}个token：{}时，第{}层的注意力".format(i, preds[0][i + 1], j + 1))
+                for k in range(cur_attentions[j].size(1)):
+                    print(cur_attentions[j][0][k][1:seq_len + 1])
+                    
         top_preds = list(preds.cpu().numpy())
 
-        # 计算概率
-        logits = outputs.scores
+
         probs = [torch.softmax(log, dim=-1) for log in logits]
 
         for i, token_id in enumerate(top_preds[0][2:]):
