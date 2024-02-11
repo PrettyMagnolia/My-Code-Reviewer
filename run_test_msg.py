@@ -15,9 +15,9 @@ from models import build_or_load_gen_model
 from configs import add_args, set_seed, set_dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
-from utils import CommentGenDataset, SimpleGenDataset
+from utils import CommentGenDataset, SimpleGenDataset, attention_plot
 from evaluator.smooth_bleu import bleu_fromstr
-
+import torch.nn.functional as F
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 def get_loader(data_file, args, tokenizer, pool):
     def fn(features):
         return features
+
     logger.info(f"Start data file {data_file}.")
     if args.raw_input:
         dataset = SimpleGenDataset(tokenizer, pool, args, data_file)
@@ -72,35 +73,65 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
         ids = [ex.example_id for ex in examples]
         source_mask = source_ids.ne(tokenizer.pad_id)
         outputs = model.generate(source_ids,
-                               attention_mask=source_mask,
-                               use_cache=True,
-                               # num_beams=args.beam_size,
-                               early_stopping=True,
-                               max_length=args.max_target_length,
-                               output_attentions=True,
-                               output_hidden_states=True,
-                               output_scores=True,
-                               return_dict_in_generate=True)
+                                 attention_mask=source_mask,
+                                 use_cache=True,
+                                 # num_beams=args.beam_size,
+                                 early_stopping=True,
+                                 max_length=args.max_target_length,
+                                 output_attentions=True,
+                                 output_hidden_states=True,
+                                 output_scores=True,
+                                 return_dict_in_generate=True)
         preds = outputs.sequences
         logits = outputs.scores
         cross_attentions = outputs.cross_attentions
         encoder_attentions = outputs.encoder_attentions
         decoder_attentions = outputs.decoder_attentions
 
+        # input_tokens = [tokenizer.decode(token_id, clean_up_tokenization_spaces=False) for token_id in list(source_ids[0].cpu().numpy())]
+
+        # 解码并记录特殊标记的下标
+        special_token_indices = []
+        decoded_tokens = []
+        for i, token_id in enumerate(list(source_ids[0].cpu().numpy())):
+            token = tokenizer.decode(token_id, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+            if token.startswith("<") and token.endswith(">"):  # 检查是否为特殊标记
+                special_token_indices.append(i)
+            else:
+                decoded_tokens.append(token)
+        input_tokens = decoded_tokens
+
+
+
         # 获取预测结果的长度 前两位为起始标志 因此真正的序列长度要-2
         seq_len = preds.size(1) - 2
         # 使用贪婪搜索时 cross_attention的长度为 seq_len+1
         for i in range(len(cross_attentions)):
+            output_tokens = [tokenizer.decode([preds[0][i + 1]], skip_special_tokens=True, clean_up_tokenization_spaces=False)]
             # 生成第i个token时注意力的情况
             cur_attentions = cross_attentions[i]
             for j in range(len(cur_attentions)):
                 # 第j层的注意力
                 print("生成第{}个token：{}时，第{}层的注意力".format(i, preds[0][i + 1], j + 1))
                 for k in range(cur_attentions[j].size(1)):
-                    print(cur_attentions[j][0][k][1:seq_len + 1])
-                    
+                    # print(cur_attentions[j][0, k, :])
+                    output_tensor = cur_attentions[j][0, k, :]
+                    all_indices = list(range(output_tensor.size(1)))
+                    indices_to_keep = torch.tensor(list(set(all_indices) - set(special_token_indices))).to(args.local_rank)
+                    # 选择不在删除索引列表中的元素
+                    new_tensor = torch.index_select(output_tensor, 1, indices_to_keep).to(args.local_rank)
+                    # 获取前10个最相关的token
+                    top_values, top_indices = torch.topk(new_tensor, 10)
+                    top_tokens = [input_tokens[idx] for idx in top_indices[0].cpu().numpy()]
+                    # attention 归一化
+                    attentions_norm = F.normalize(top_values, p=2, dim=1)
+                    # 显示第ii个Head的Attention
+                    attention_plot(attentions_norm.cpu().numpy(), annot=True,
+                                   x_texts=top_tokens,
+                                   y_texts=output_tokens, figsize=(15, 15),
+                                   figure_path='./figures',
+                                   figure_name='layer:{}, bert_attention_weight_head_{}.png'.format(j + 1, k + 1))
         top_preds = list(preds.cpu().numpy())
-
 
         probs = [torch.softmax(log, dim=-1) for log in logits]
 
@@ -111,7 +142,8 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
         pred_ids.extend(top_preds)
 
     # 解码预测结果和参考答案
-    pred_nls = [tokenizer.decode(id[2:], skip_special_tokens=True, clean_up_tokenization_spaces=False) for id in pred_ids]
+    pred_nls = [tokenizer.decode(id[2:], skip_special_tokens=True, clean_up_tokenization_spaces=False) for id in
+                pred_ids]
     valid_file = args.eval_file
     golds = []
     with open(valid_file, "r") as f:
@@ -168,6 +200,7 @@ def main(args):
     model.eval()
     bleu = eval_epoch_bleu(args, dataloader, model, tokenizer)
     logger.warning(f"BLEU: {bleu}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

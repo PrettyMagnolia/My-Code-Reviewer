@@ -5,6 +5,8 @@ from copy import deepcopy as cp
 from torch.utils.data import Dataset
 from tokenizers import ByteLevelBPETokenizer
 from transformers import T5Tokenizer, RobertaTokenizer
+from matplotlib import pyplot as plt
+import seaborn as sns
 import nltk
 
 logging.basicConfig(
@@ -821,3 +823,25 @@ def read_jsonl(path):
                 continue
             data.append(js)
     return data
+
+# 打印
+def attention_plot(attention, x_texts, y_texts=None, figsize=(15, 10), annot=False, figure_path='./figures',
+                   figure_name='attention_weight.png'):
+    plt.clf()
+    fig, ax = plt.subplots(figsize=figsize)
+    sns.set(font_scale=1.25)
+    hm = sns.heatmap(attention,
+                     cbar=True,
+                     cmap="RdBu_r",
+                     annot=annot,
+                     square=True,
+                     fmt='.2f',
+                     annot_kws={'size': 10},
+                     yticklabels=y_texts,
+                     xticklabels=x_texts
+                     )
+    # if os.path.exists(figure_path) is False:
+    #     os.makedirs(figure_path)
+    plt.show()
+    # plt.savefig(os.path.join(figure_path, figure_name))
+    # plt.close()
