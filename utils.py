@@ -17,11 +17,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-
 class MyTokenizer(object):
     """
     Wrapper for ByteLevelBPETokenizer
     """
+
     def __init__(self, vocab=None, merges=None, **kwargs):
         self.tokenizer = ByteLevelBPETokenizer(vocab, merges, **kwargs)
         self.update_id2token()
@@ -45,8 +45,8 @@ class MyTokenizer(object):
     def convert_ids_to_tokens(self, ids):
         vocab = self.id2token
         return [vocab[i] for i in ids]
-    
-    def decode(self, ids, **kwargs):    ##### to be update
+
+    def decode(self, ids, **kwargs):  ##### to be update
         tokens = self.convert_ids_to_tokens(ids)
         return " ".join(tokens)
 
@@ -67,6 +67,7 @@ class RefineFeatures(object):
         self.source_ids = source_ids
         self.target_ids = target_ids
 
+
 class RefineDataset(Dataset):
     def __init__(self, tokenizer, pool, args, file_path, samplenum=-1):
         self.tokenizer = tokenizer
@@ -80,8 +81,8 @@ class RefineDataset(Dataset):
             examples = examples[:samplenum]
         logger.info(f"Tokenize examples: {file_path}")
         self.feats = pool.map(self.tokenize, \
-            [(example, tokenizer, args) for example in examples])
-        
+                              [(example, tokenizer, args) for example in examples])
+
     def tokenize(self, item):
         example, tokenizer, args = item
         oldlines = example["old"].split("\n")
@@ -138,6 +139,7 @@ class RefineDataset(Dataset):
     def __getitem__(self, i):
         return self.feats[i]
 
+
 class SimpleRefineDataset(RefineDataset):
     def tokenize(self, item):
         example, tokenizer, args = item
@@ -173,7 +175,7 @@ class Seq2SeqDataset(RefineDataset):
         tgtids = self.encode_remove(tokenizer, outputs, args)
         srcids, tgtids = self.pad_assert(srcids, tgtids, args, tokenizer)
         return RefineFeatures(example["id"], srcids, tgtids)
-    
+
     @staticmethod
     def process_pred_gold(pred, gold):
         gold = " ".join(gold.split())
@@ -204,12 +206,12 @@ class TextDataset(Dataset):
             examples = read_review_examples(file_path, samplenum, tokenizer)
             logger.info(f"Tokenize examples: {file_path}")
             examples = pool.map(self.tokenize, \
-                [(example, tokenizer, args) for example in examples])
+                                [(example, tokenizer, args) for example in examples])
             torch.save(examples, savep)
         logger.info("Convert examples to features...")
         self.set_start_end_ids(examples)
         self.featss = pool.map(self.convert_examples_to_features, \
-            [(example, tokenizer, args) for example in examples])
+                               [(example, tokenizer, args) for example in examples])
         self.feats = [feat for feats in self.featss for feat in feats]  # expand the lists
 
     def __len__(self):
@@ -228,7 +230,7 @@ class TextDataset(Dataset):
             start_id = 0
             end_id = len(labels) - 1
             for i, label in enumerate(labels):
-                if label != -100:               # find the first label
+                if label != -100:  # find the first label
                     start_id = i
                     break
             for i in range(len(labels) - 1, -1, -1):
@@ -263,7 +265,8 @@ class TextDataset(Dataset):
                 curlen -= 1 + len(lines[right])
         lines = lines[left:right]
         labels = example.labels[left:right]
-        assert len(lines) + sum(map(len, lines)) <= args.max_source_length - 2, "Too long inputs in TextDataset.tokenize."
+        assert len(lines) + sum(
+            map(len, lines)) <= args.max_source_length - 2, "Too long inputs in TextDataset.tokenize."
         if len(lines) != len(labels):
             logger.info("Not equal length in TextDataset.tokenize.")
             lines = lines[:len(labels)]
@@ -297,7 +300,7 @@ class TextDataset(Dataset):
             if i == example.start_id:
                 source_ids.append(tokenizer.start_id)
                 input_labels.append(-100)
-            if label != -100:       # only insert special tokens at diffs, not context
+            if label != -100:  # only insert special tokens at diffs, not context
                 source_ids.append(tokenizer.mask_id)
                 input_labels.append(label)
             source_ids.extend(line)
@@ -346,7 +349,7 @@ class TextDataset(Dataset):
                 source_ids.append(tokenizer.special_dict[f"<e{SPECIAL_ID}>"])
                 target_ids.append(tokenizer.special_dict[f"<e{SPECIAL_ID}>"])
                 target_ids.extend(line)
-                if SPECIAL_ID < 99:     # only 0-99 ids in vocab
+                if SPECIAL_ID < 99:  # only 0-99 ids in vocab
                     SPECIAL_ID += 1
             else:
                 source_ids.extend(line)
@@ -400,7 +403,7 @@ class TextDataset(Dataset):
             while j < len(masks) and masks[j]:
                 target_ids.append(msg_ids[j])
                 j += 1
-            if SPECIAL_ID < 99:     # only 0-99 ids in vocab
+            if SPECIAL_ID < 99:  # only 0-99 ids in vocab
                 SPECIAL_ID += 1
             i = j
         source_ids, target_ids = self.pad_assert(source_ids, target_ids, args, tokenizer)
@@ -453,12 +456,12 @@ class CommentGenDataset(TextDataset):
             #     examples[i].msg = " ".join(nltk.word_tokenize(examples[i].msg))
             logger.info(f"Tokenize examples: {file_path}")
             examples = pool.map(self.tokenize, \
-                [(example, tokenizer, args) for example in examples])
+                                [(example, tokenizer, args) for example in examples])
             torch.save(examples, savep)
         logger.info("Convert examples to features...")
         self.set_start_end_ids(examples)
         self.feats = pool.map(self.convert_examples_to_features, \
-            [(example, tokenizer, args) for example in examples])
+                              [(example, tokenizer, args) for example in examples])
         self.feats = [feat for feat in self.feats if feat is not None]
 
     def convert_examples_to_features(self, item):
@@ -488,12 +491,12 @@ class CommentClsDataset(TextDataset):
             examples = read_review_examples(file_path, samplenum, tokenizer)
             logger.info(f"Tokenize examples: {file_path}")
             examples = pool.map(self.tokenize, \
-                [(example, tokenizer, args) for example in examples])
+                                [(example, tokenizer, args) for example in examples])
             torch.save(examples, savep)
         logger.info("Convert examples to features...")
         self.set_start_end_ids(examples)
         self.feats = pool.map(self.convert_examples_to_features, \
-            [(example, tokenizer, args) for example in examples])
+                              [(example, tokenizer, args) for example in examples])
 
     def convert_examples_to_features(self, item):
         example, tokenizer, args = item
@@ -521,7 +524,7 @@ class SimpleClsDataset(TextDataset):
             examples = read_review_examples(file_path, samplenum, tokenizer)
             logger.info(f"Tokenize examples: {file_path}")
             self.feats = pool.map(self.convert_examples_to_features, \
-                [(example, tokenizer, args) for example in examples])
+                                  [(example, tokenizer, args) for example in examples])
             torch.save(self.feats, savep)
 
     def convert_examples_to_features(self, item):
@@ -579,14 +582,16 @@ class SimpleGenDataset(TextDataset):
     def convert_examples_to_features(self, item):
         dic, tokenizer, args = item
         diff, msg = dic["patch"], dic["msg"]
-        difflines = diff.split("\n")[1:]        # remove start @@
+        difflines = diff.split("\n")[1:]  # remove start @@
         difflines = [line for line in difflines if len(line.strip()) > 0]
         map_dic = {"-": 0, "+": 1, " ": 2}
+
         def f(s):
             if s in map_dic:
                 return map_dic[s]
             else:
                 return 2
+
         labels = [f(line[0]) for line in difflines]
         difflines = [line[1:].strip() for line in difflines]
         inputstr = ""
@@ -626,19 +631,21 @@ class ReviewFeatures(object):
         assert type in ("label", "line", "genmsg", "daemsg")
         self.type = type
 
+
 class ClsFeatures(object):
     def __init__(self, example_id, source_ids, y):
         self.example_id = example_id
         self.source_ids = source_ids
         self.y = y
 
+
 class ReviewExample(object):
     """A single training/test example."""
 
     def __init__(
-        self, idx, oldf, diff, msg, cmtid, max_len, y
+            self, idx, oldf, diff, msg, cmtid, max_len, y
     ):
-        self.idx = idx      # idx is useless yet
+        self.idx = idx  # idx is useless yet
         self.oldf = oldf
         self.diff = diff
         self.msg = msg
@@ -660,7 +667,7 @@ class ReviewExample(object):
         # Warning: lines is not self.lines
         # lines for rough length estimation
         lines = [source_str.split() for source_str in self.lines]
-        inputl = len(lines) # line tag
+        inputl = len(lines)  # line tag
         inputl += sum(map(len, lines))
         left, right = 0, len(lines)
         while inputl > self.max_len:
@@ -679,10 +686,10 @@ class ReviewExample(object):
         i = 0
         while inputl < self.max_len and i < prev_after_len:
             if i < len(prevlines):
-                newl = inputl + len(prevlines[-1-i].split()) + 1
+                newl = inputl + len(prevlines[-1 - i].split()) + 1
                 if newl > self.max_len:
                     break
-                self.lines.insert(0, prevlines[-1-i])
+                self.lines.insert(0, prevlines[-1 - i])
                 self.labels.insert(0, -100)
                 inputl = newl  # tag
             if i < len(afterlines):
@@ -691,7 +698,7 @@ class ReviewExample(object):
                     break
                 self.lines.append(afterlines[i])
                 self.labels.append(-100)
-                inputl = newl    # tag
+                inputl = newl  # tag
             i += 1
         assert inputl <= self.max_len, "Too long inputs."
         assert len(self.lines) == len(self.labels), "Not equal length."
@@ -710,7 +717,7 @@ class ReviewExample(object):
         j = totallen - 1
         while j >= 0 and line[j] in rep:
             j -= 1
-        line = line[i : j + 1]
+        line = line[i: j + 1]
         return line
 
     def align_and_clean(self):
@@ -790,14 +797,14 @@ def read_review_examples(filename, data_num=-1, tokenizer=None):
             if "msg" in js and len(js["msg"]) > 0:
                 js["y"] = 1
             example = ReviewExample(
-                        idx=idx,
-                        oldf=js["oldf"],
-                        diff=js["patch"],
-                        msg=js["msg"] if "msg" in js else "",
-                        cmtid=js["cmtid"] if "cmtid" in js else "",
-                        max_len=maxl,
-                        y=js["y"]
-                    )
+                idx=idx,
+                oldf=js["oldf"],
+                diff=js["patch"],
+                msg=js["msg"] if "msg" in js else "",
+                cmtid=js["cmtid"] if "cmtid" in js else "",
+                max_len=maxl,
+                y=js["y"]
+            )
             if example.avail:
                 examples.append(example)
                 idx += 1
@@ -805,10 +812,10 @@ def read_review_examples(filename, data_num=-1, tokenizer=None):
                     break
             else:
                 # print(f"Passing {idx} because of invalid diff.")
-                idx += 1 
+                idx += 1
                 if idx == data_num:
                     break
-                
+
     return examples
 
 
@@ -823,6 +830,7 @@ def read_jsonl(path):
                 continue
             data.append(js)
     return data
+
 
 # 打印
 def attention_plot(attention, x_texts, y_texts=None, figsize=(15, 10), annot=False, figure_path='./figures',
@@ -845,4 +853,33 @@ def attention_plot(attention, x_texts, y_texts=None, figsize=(15, 10), annot=Fal
     plt.savefig(os.path.join(figure_path, figure_name))
     plt.show()
     plt.close()
+
+
+def read_stopwords(file_path):
+    stopwords = []
+    with open(file_path, 'r', encoding='utf-8') as file:
+        for line in file:
+            # 去除行末的换行符
+            line = line.strip()
+            # 跳过空行
+            if not line:
+                continue
+            words = line.split(' ')
+            for word in words:
+                stopwords.append(word)
+    return stopwords
+
+
+def filter_stopwords(tokens):
+    filter_tokens = []
+    # 调用函数读取停用词列表
+    stopwords_list = read_stopwords(os.path.join(os.path.dirname(__file__), "stop_words.txt"))
+    for token in tokens:
+        flag = True
+        for stopword in stopwords_list:
+            if stopword in token:
+                flag = False
+        if flag:
+            filter_tokens.append(token)
+    return filter_tokens
 

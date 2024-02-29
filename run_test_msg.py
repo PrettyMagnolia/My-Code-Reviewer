@@ -15,7 +15,7 @@ from models import build_or_load_gen_model
 from configs import add_args, set_seed, set_dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
-from utils import CommentGenDataset, SimpleGenDataset, attention_plot
+from utils import CommentGenDataset, SimpleGenDataset, attention_plot, read_stopwords, filter_stopwords
 from evaluator.smooth_bleu import bleu_fromstr
 import torch.nn.functional as F
 
@@ -121,16 +121,19 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
                     # 选择不在删除索引列表中的元素
                     new_tensor = torch.index_select(output_tensor, 1, indices_to_keep).to(args.local_rank)
                     # 获取前10个最相关的token
-                    top_values, top_indices = torch.topk(new_tensor, 10)
+                    top_values, top_indices = torch.topk(new_tensor, new_tensor.size(1))
                     top_tokens = [input_tokens[idx] for idx in top_indices[0].cpu().numpy()]
-                    # attention 归一化
-                    attentions_norm = F.normalize(top_values, p=2, dim=1)
-                    # 显示第ii个Head的Attention
-                    attention_plot(attentions_norm.cpu().numpy(), annot=True,
-                                   x_texts=top_tokens,
-                                   y_texts=output_tokens, figsize=(15, 15),
-                                   figure_path='./figures',
-                                   figure_name='layer{}bert_attention_weight_head_{}.png'.format(j + 1, k + 1))
+                    filtered_top_tokens = filter_stopwords(top_tokens)
+                    print(f'layer{j + 1}: bert_attention_weight_head_{k + 1}:', filtered_top_tokens)
+                    # # attention 归一化
+                    # attentions_norm = F.normalize(top_values, p=2, dim=1)
+                    # print(f'layer{j + 1}: bert_attention_weight_head_{k + 1}:', attentions_norm.cpu().numpy())
+                    # # 显示第ii个Head的Attention
+                    # attention_plot(attentions_norm.cpu().numpy(), annot=True,
+                    #                x_texts=top_tokens,
+                    #                y_texts=output_tokens, figsize=(15, 15),
+                    #                figure_path='./figures',
+                    #                figure_name='layer{}bert_attention_weight_head_{}.png'.format(j + 1, k + 1))
         top_preds = list(preds.cpu().numpy())
 
         probs = [torch.softmax(log, dim=-1) for log in logits]
