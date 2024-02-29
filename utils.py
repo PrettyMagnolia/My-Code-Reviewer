@@ -840,8 +840,9 @@ def attention_plot(attention, x_texts, y_texts=None, figsize=(15, 10), annot=Fal
                      yticklabels=y_texts,
                      xticklabels=x_texts
                      )
-    # if os.path.exists(figure_path) is False:
-    #     os.makedirs(figure_path)
+    if os.path.exists(figure_path) is False:
+        os.makedirs(figure_path)
+    plt.savefig(os.path.join(figure_path, figure_name))
     plt.show()
-    # plt.savefig(os.path.join(figure_path, figure_name))
-    # plt.close()
+    plt.close()
+

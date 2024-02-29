@@ -101,13 +101,12 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
                 decoded_tokens.append(token)
         input_tokens = decoded_tokens
 
-
-
         # 获取预测结果的长度 前两位为起始标志 因此真正的序列长度要-2
         seq_len = preds.size(1) - 2
         # 使用贪婪搜索时 cross_attention的长度为 seq_len+1
         for i in range(len(cross_attentions)):
-            output_tokens = [tokenizer.decode([preds[0][i + 1]], skip_special_tokens=True, clean_up_tokenization_spaces=False)]
+            output_tokens = [
+                tokenizer.decode([preds[0][i + 1]], skip_special_tokens=True, clean_up_tokenization_spaces=False)]
             # 生成第i个token时注意力的情况
             cur_attentions = cross_attentions[i]
             for j in range(len(cur_attentions)):
@@ -117,7 +116,8 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
                     # print(cur_attentions[j][0, k, :])
                     output_tensor = cur_attentions[j][0, k, :]
                     all_indices = list(range(output_tensor.size(1)))
-                    indices_to_keep = torch.tensor(list(set(all_indices) - set(special_token_indices))).to(args.local_rank)
+                    indices_to_keep = torch.tensor(list(set(all_indices) - set(special_token_indices))).to(
+                        args.local_rank)
                     # 选择不在删除索引列表中的元素
                     new_tensor = torch.index_select(output_tensor, 1, indices_to_keep).to(args.local_rank)
                     # 获取前10个最相关的token
@@ -130,7 +130,7 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
                                    x_texts=top_tokens,
                                    y_texts=output_tokens, figsize=(15, 15),
                                    figure_path='./figures',
-                                   figure_name='layer:{}, bert_attention_weight_head_{}.png'.format(j + 1, k + 1))
+                                   figure_name='layer{}bert_attention_weight_head_{}.png'.format(j + 1, k + 1))
         top_preds = list(preds.cpu().numpy())
 
         probs = [torch.softmax(log, dim=-1) for log in logits]
@@ -206,6 +206,42 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     args = add_args(parser)
     args.cpu_count = multiprocessing.cpu_count()
+
+    # 手动设置全局变量
+    mnt_dir = "/home/codereview"
+
+    MASTER_HOST = "localhost"
+    MASTER_PORT = 23333
+    RANK = 0
+    PER_NODE_GPU = 1
+    WORLD_SIZE = 1
+    NODES = 1
+    NCCL_DEBUG = "INFO"
+
+    # 手动设置args
+    args.nproc_per_node = PER_NODE_GPU
+    args.node_rank = RANK
+    args.nnodes = NODES
+    args.master_addr = MASTER_HOST
+    args.master_port = MASTER_PORT
+
+    args.model_name_or_path = '/data/lyf/code/Code_Reviewer/3_Pretrained_Model'
+    args.output_dir = '/data/lyf/code/Code_Reviewer/0_Result'
+    args.load_model_path = '/data/lyf/code/Code_Reviewer/3_Pretrained_Model'
+    args.eval_file = '/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-test-small.jsonl'
+    args.max_source_length = 512
+    args.max_target_length = 128
+    args.eval_batch_size = 1
+    args.mask_rate = 0.15
+    args.save_steps = 1800
+    args.beam_size = 10
+    args.long_steps = 100
+    args.train_steps = 120000
+    args.gpu_per_node = PER_NODE_GPU
+    args.node_index = RANK
+    args.seed = 2233
+    args.raw_input = True
+
     # remove long tokenization warning. ref: https://github.com/huggingface/transformers/issues/991
     logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
     logger.info(args)
