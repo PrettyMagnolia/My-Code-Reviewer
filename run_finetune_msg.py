@@ -295,6 +295,23 @@ def main(args):
 
 
 if __name__ == "__main__":
+    # 手动设置全局变量
+    mnt_dir = "/home/codereview"
+
+    MASTER_HOST = "localhost"
+    MASTER_PORT = 23333
+    RANK = 0
+    PER_NODE_GPU = 1
+    WORLD_SIZE = 1
+    NODES = 1
+    NCCL_DEBUG = "INFO"
+
+    os.environ['RANK'] = str(RANK)
+    os.environ['WORLD_SIZE'] = str(WORLD_SIZE)
+    os.environ['MASTER_ADDR'] = MASTER_HOST
+    os.environ['MASTER_PORT'] = str(MASTER_PORT)
+    os.environ['NCCL_DEBUG'] = NCCL_DEBUG
+
     parser = argparse.ArgumentParser()
     args = add_args(parser)
     args.cpu_count = multiprocessing.cpu_count()
