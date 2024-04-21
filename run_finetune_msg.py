@@ -19,7 +19,6 @@ import torch.distributed as dist
 from utils import CommentGenDataset, SimpleGenDataset
 from evaluator.smooth_bleu import bleu_fromstr
 
-
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
     datefmt="%m/%d/%Y %H:%M:%S",
@@ -28,10 +27,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-
 def get_loaders(data_files, args, tokenizer, pool, eval=False):
     def fn(features):
         return features
+
     global_rank = args.global_rank
     for data_file in data_files:
         if args.raw_input:
@@ -64,11 +63,11 @@ def eval_bleu_epoch(args, eval_dataloader, model, tokenizer):
         ids = [ex.example_id for ex in examples]
         source_mask = source_ids.ne(tokenizer.pad_id)
         preds = model.generate(source_ids,
-                            attention_mask=source_mask,
-                            use_cache=True,
-                            num_beams=args.beam_size,
-                            early_stopping=True,
-                            max_length=args.max_target_length)
+                               attention_mask=source_mask,
+                               use_cache=True,
+                               num_beams=args.beam_size,
+                               early_stopping=True,
+                               max_length=args.max_target_length)
         top_preds = list(preds.cpu().numpy())
         pred_ids.extend(top_preds)
     # [1:] to remove beginning '<msg>'
@@ -207,15 +206,15 @@ def main(args):
         # 设置模型为训练模式
         model.train()
         nb_tr_examples, nb_tr_steps, tr_loss = 0, 0, 0
-        for _, _, train_dataloader in get_loaders(train_files, args, tokenizer, pool):        # WARNING: this is an iterator, to save memory
+        for _, _, train_dataloader in get_loaders(train_files, args, tokenizer, pool):  # WARNING: this is an iterator, to save memory
             for step, examples in enumerate(train_dataloader, 1):
                 if step == 1:
                     # 打印第一个批次的信息
                     ex = examples[0]
-                    logger.info(f"batch size: {len(examples)}")
-                    logger.info(f"example source: {tokenizer.convert_ids_to_tokens(ex.source_ids)}")
+                    # logger.info(f"batch size: {len(examples)}")
+                    # logger.info(f"example source: {tokenizer.convert_ids_to_tokens(ex.source_ids)}")
                     # logger.info(f"example label: {tokenizer.convert_ids_to_tokens(ex.source_labels)}")
-                    logger.info(f"example target: {tokenizer.convert_ids_to_tokens(ex.target_ids)}")
+                    # logger.info(f"example target: {tokenizer.convert_ids_to_tokens(ex.target_ids)}")
 
                 # 将数据转换为张量并移到指定的设备
                 source_ids = torch.tensor(
@@ -292,6 +291,9 @@ def main(args):
                         )
                     )
                     time.sleep(5)
+        # 输出每个epoch的平均loss
+        avg_epoch_loss = tr_loss / nb_tr_steps
+        logger.info(f"Epoch {epoch}: Average Loss = {avg_epoch_loss}")
 
 
 if __name__ == "__main__":
@@ -316,6 +318,26 @@ if __name__ == "__main__":
     args = add_args(parser)
     args.cpu_count = multiprocessing.cpu_count()
     # remove long tokenization warning. ref: https://github.com/huggingface/transformers/issues/991
+
+    args.train_epochs = 30
+    args.model_name_or_path = "/data/lyf/code/Code_Reviewer/3_Pretrained_Model"
+    args.output_dir = "/data/lyf/code/Code_Reviewer/0_Result"
+    args.train_filename = "/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-small.jsonl"
+    args.dev_filename = "/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-valid-small.jsonl"
+    args.max_source_length = 512
+    args.max_target_length = 128
+    args.train_batch_size = 6
+    args.learning_rate = 3e-4
+    args.gradient_accumulation_steps = 3
+    args.mask_rate = 0.15
+    args.save_steps = 1800
+    args.log_steps = 100
+    args.train_steps = 60000
+    args.gpu_per_node = PER_NODE_GPU
+    args.node_index = RANK
+    args.seed = 2233
+    args.raw_input = True
+
     logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
     logger.info(args)
     main(args)
