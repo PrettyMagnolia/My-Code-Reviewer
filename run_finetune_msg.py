@@ -18,6 +18,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
 from utils import CommentGenDataset, SimpleGenDataset
 from evaluator.smooth_bleu import bleu_fromstr
+import wandb
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -25,6 +26,15 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+
+exp_name = "exp" + time.strftime("-%Y%m%d-%H_%M_%S", time.localtime(int(round(time.time() * 1000)) / 1000))
+wandb_project_name = "My_Code_Reviewer"
+
+
+def setup_wandb(config):
+    print('setup_wandb...')
+    # 初始化wandb
+    wandb.init(config=config, project=wandb_project_name, name=exp_name)
 
 
 def get_loaders(data_files, args, tokenizer, pool, eval=False):
@@ -294,6 +304,8 @@ def main(args):
         # 输出每个epoch的平均loss
         avg_epoch_loss = tr_loss / nb_tr_steps
         logger.info(f"Epoch {epoch}: Average Loss = {avg_epoch_loss}")
+        wandb.log({"Epoch Loss": avg_epoch_loss}, step=epoch)
+
 
 
 if __name__ == "__main__":
@@ -340,6 +352,11 @@ if __name__ == "__main__":
 
     logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
     logger.info(args)
+    # 初始化wandb
+    setup_wandb(args)
+    # 开始训练
     main(args)
+    # 结束wandb
+    wandb.finish()
     logger.info("Training finished.")
     # torch.multiprocessing.spawn(main, args=(args,), nprocs=torch.cuda.device_count())
