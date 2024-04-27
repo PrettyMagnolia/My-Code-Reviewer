@@ -306,6 +306,18 @@ def main(args):
         logger.info(f"Epoch {epoch}: Average Loss = {avg_epoch_loss}")
         wandb.log({"Epoch Loss": avg_epoch_loss}, step=epoch)
 
+        # 判断是否到了指定的epoch，保存模型
+        if epoch % args.save_interval_epochs == 0 or epoch == args.train_epochs:
+            _, _, valid_dataloader = next(get_loaders(valid_files, args, tokenizer, pool, eval=True))
+            bleu = eval_bleu_epoch(args, valid_dataloader, model, tokenizer)
+            output_dir = os.path.join(args.output_dir, "checkpoints-" + str(global_step) + "-" + str(bleu))
+            save_model(model, optimizer, scheduler, output_dir, config)
+            logger.info(
+                "Save the {}-step model and optimizer into {}".format(
+                    global_step, output_dir
+                )
+            )
+            time.sleep(5)
 
 
 if __name__ == "__main__":
@@ -349,6 +361,8 @@ if __name__ == "__main__":
     args.node_index = RANK
     args.seed = 2233
     args.raw_input = True
+
+    args.save_interval_epochs = 100
 
     logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
     logger.info(args)

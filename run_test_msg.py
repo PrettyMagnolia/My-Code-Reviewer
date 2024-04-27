@@ -88,52 +88,54 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
         encoder_attentions = outputs.encoder_attentions
         decoder_attentions = outputs.decoder_attentions
 
-        # input_tokens = [tokenizer.decode(token_id, clean_up_tokenization_spaces=False) for token_id in list(source_ids[0].cpu().numpy())]
+        input_tokens = [tokenizer.decode(token_id, clean_up_tokenization_spaces=False) for token_id in list(source_ids[0].cpu().numpy())]
 
-        # # 解码并记录特殊标记的下标
-        # special_token_indices = []
-        # decoded_tokens = []
-        # for i, token_id in enumerate(list(source_ids[0].cpu().numpy())):
-        #     token = tokenizer.decode(token_id, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-        #     if token.startswith("<") and token.endswith(">"):  # 检查是否为特殊标记
-        #         special_token_indices.append(i)
-        #     else:
-        #         decoded_tokens.append(token)
-        # input_tokens = decoded_tokens
-        #
-        # # 获取预测结果的长度 前两位为起始标志 因此真正的序列长度要-2
-        # seq_len = preds.size(1) - 2
-        # # 使用贪婪搜索时 cross_attention的长度为 seq_len+1
-        # for i in range(len(cross_attentions)):
-        #     output_tokens = [
-        #         tokenizer.decode([preds[0][i + 1]], skip_special_tokens=True, clean_up_tokenization_spaces=False)]
-        #     # 生成第i个token时注意力的情况
-        #     cur_attentions = cross_attentions[i]
-        #     for j in range(len(cur_attentions)):
-        #         # 第j层的注意力
-        #         print("生成第{}个token：{}时，第{}层的注意力".format(i, preds[0][i + 1], j + 1))
-        #         for k in range(cur_attentions[j].size(1)):
-        #             # print(cur_attentions[j][0, k, :])
-        #             output_tensor = cur_attentions[j][0, k, :]
-        #             all_indices = list(range(output_tensor.size(1)))
-        #             indices_to_keep = torch.tensor(list(set(all_indices) - set(special_token_indices))).to(
-        #                 args.local_rank)
-        #             # 选择不在删除索引列表中的元素
-        #             new_tensor = torch.index_select(output_tensor, 1, indices_to_keep).to(args.local_rank)
-        #             # 获取前10个最相关的token
-        #             top_values, top_indices = torch.topk(new_tensor, new_tensor.size(1))
-        #             top_tokens = [input_tokens[idx] for idx in top_indices[0].cpu().numpy()]
-        #             filtered_top_tokens = filter_stopwords(top_tokens)
-        #             print(f'layer{j + 1}: bert_attention_weight_head_{k + 1}:', filtered_top_tokens)
-        #             # # attention 归一化
-        #             # attentions_norm = F.normalize(top_values, p=2, dim=1)
-        #             # print(f'layer{j + 1}: bert_attention_weight_head_{k + 1}:', attentions_norm.cpu().numpy())
-        #             # # 显示第ii个Head的Attention
-        #             # attention_plot(attentions_norm.cpu().numpy(), annot=True,
-        #             #                x_texts=top_tokens,
-        #             #                y_texts=output_tokens, figsize=(15, 15),
-        #             #                figure_path='./figures',
-        #             #                figure_name='layer{}bert_attention_weight_head_{}.png'.format(j + 1, k + 1))
+        # 解码并记录特殊标记的下标
+        special_token_indices = []
+        decoded_tokens = []
+        for i, token_id in enumerate(list(source_ids[0].cpu().numpy())):
+            token = tokenizer.decode(token_id, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+            if token.startswith("<") and token.endswith(">"):  # 检查是否为特殊标记
+                special_token_indices.append(i)
+            else:
+                decoded_tokens.append(token)
+        input_tokens = decoded_tokens
+
+        # 获取预测结果的长度 前两位为起始标志 因此真正的序列长度要-2
+        seq_len = preds.size(1) - 2
+        # 使用贪婪搜索时 cross_attention的长度为 seq_len+1
+        for i in range(len(cross_attentions)):
+            output_tokens = [
+                tokenizer.decode([preds[0][i + 1]], skip_special_tokens=True, clean_up_tokenization_spaces=False)]
+            # 生成第i个token时注意力的情况
+            cur_attentions = cross_attentions[i]
+            for j in range(len(cur_attentions)):
+                # 第j层的注意力
+                token_name = tokenizer.decode(preds[0][i + 1], skip_special_tokens=True, clean_up_tokenization_spaces=False)
+                print("生成第{}个token：{}时，第{}层的注意力".format(i, token_name, j + 1))
+                for k in range(cur_attentions[j].size(1)):
+                    # print(cur_attentions[j][0, k, :])
+                    output_tensor = cur_attentions[j][0, k, :]
+                    all_indices = list(range(output_tensor.size(1)))
+                    indices_to_keep = torch.tensor(list(set(all_indices) - set(special_token_indices))).to(
+                        args.local_rank)
+                    # 选择不在删除索引列表中的元素
+                    new_tensor = torch.index_select(output_tensor, 1, indices_to_keep).to(args.local_rank)
+                    # 获取前10个最相关的token
+                    top_values, top_indices = torch.topk(new_tensor, new_tensor.size(1))
+                    top_tokens = [input_tokens[idx] for idx in top_indices[0].cpu().numpy()]
+                    # 过滤停用词
+                    top_tokens = filter_stopwords(top_tokens)
+                    print(f'layer{j + 1}: bert_attention_weight_head_{k + 1}:', top_tokens)
+                    # # attention 归一化
+                    # attentions_norm = F.normalize(top_values, p=2, dim=1)
+                    # print(f'layer{j + 1}: bert_attention_weight_head_{k + 1}:', attentions_norm.cpu().numpy())
+                    # # 显示第ii个Head的Attention
+                    # attention_plot(attentions_norm.cpu().numpy(), annot=True,
+                    #                x_texts=top_tokens,
+                    #                y_texts=output_tokens, figsize=(15, 15),
+                    #                figure_path='./figures',
+                    #                figure_name='layer{}bert_attention_weight_head_{}.png'.format(j + 1, k + 1))
         top_preds = list(preds.cpu().numpy())
 
         probs = [torch.softmax(log, dim=-1) for log in logits]

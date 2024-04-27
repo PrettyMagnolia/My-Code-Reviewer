@@ -436,39 +436,54 @@ class TextDataset(Dataset):
 
 class CommentGenDataset(TextDataset):
     def __init__(self, tokenizer, pool, args, file_path, samplenum=-1):
+        # 初始化 tokenizer，并根据 tokenizer 的类型设置 tokenizer_type
         self.tokenizer = tokenizer
         if isinstance(tokenizer, MyTokenizer):
-            tokenizer_type = "mytok"
+            tokenizer_type = "mytok"  # 自定义的 Tokenizer
         elif isinstance(tokenizer, T5Tokenizer):
-            tokenizer_type = ""
+            tokenizer_type = ""       # T5 Tokenizer
         elif isinstance(tokenizer, RobertaTokenizer):
-            tokenizer_type = "rb"
+            tokenizer_type = "rb"     # Roberta Tokenizer
         else:
-            tokenizer_type = "unk"
+            tokenizer_type = "unk"    # 未知 Tokenizer
+
+        # 替换文件扩展名以创建已处理示例的保存路径。
         savep = file_path.replace(".jsonl", tokenizer_type + ".exps")
+
+        # 如果预处理后的特征文件存在，则从文件加载，否则从原始数据处理。
         if os.path.exists(savep):
-            logger.info("Loading examples from {}".format(savep))
+            logger.info("从 {} 加载示例".format(savep))  # 从文件加载示例
             examples = torch.load(savep)
         else:
-            logger.info("Reading examples from {}".format(file_path))
+            logger.info("从 {} 读取示例".format(file_path))  # 读取原始文件中的数据
             examples = read_review_examples(file_path, samplenum, tokenizer)
+            # 可选的对评论进行词语分割（示例中此行已注释）
             # for i in range(len(examples)):
             #     examples[i].msg = " ".join(nltk.word_tokenize(examples[i].msg))
-            logger.info(f"Tokenize examples: {file_path}")
+            logger.info("对示例进行分词处理: {}".format(file_path))
+            # 使用进程池来加速示例的分词处理
             examples = pool.map(self.tokenize, \
                                 [(example, tokenizer, args) for example in examples])
-            torch.save(examples, savep)
-        logger.info("Convert examples to features...")
+            torch.save(examples, savep)  # 保存处理后的数据
+
+        logger.info("将示例转换为特征...")
+        # 设置每个示例的起始和结束标识符
         self.set_start_end_ids(examples)
+        # 使用进程池转换所有示例为特征
         self.feats = pool.map(self.convert_examples_to_features, \
                               [(example, tokenizer, args) for example in examples])
+        # 过滤掉可能转换失败返回 None 的特征
         self.feats = [feat for feat in self.feats if feat is not None]
 
     def convert_examples_to_features(self, item):
+        # 解包输入元组
         example, tokenizer, args = item
+        # 如果评论信息为空，则不生成特征
         if len(example.msg) == 0:
             return None
+        # 生成评论特征
         return self.genmsg_example(item)
+
 
 
 class CommentClsDataset(TextDataset):
@@ -554,46 +569,58 @@ class SimpleClsDataset(TextDataset):
 
 class SimpleGenDataset(TextDataset):
     def __init__(self, tokenizer, pool, args, file_path, samplenum=-1):
+        # 初始化 tokenizer，并根据 tokenizer 的类型设置 tokenizer_type
         self.tokenizer = tokenizer
         if isinstance(tokenizer, MyTokenizer):
-            tokenizer_type = "mytok"
+            tokenizer_type = "mytok"  # 自定义的 Tokenizer
         elif isinstance(tokenizer, T5Tokenizer):
-            tokenizer_type = ""
+            tokenizer_type = ""  # T5 Tokenizer
         elif isinstance(tokenizer, RobertaTokenizer):
-            tokenizer_type = "rb"
+            tokenizer_type = "rb"  # Roberta Tokenizer
         else:
-            tokenizer_type = "unk"
+            tokenizer_type = "unk"  # 未知 Tokenizer
+
+        # 替换文件扩展名以创建已处理示例的保存路径。
         savep = file_path.replace(".jsonl", tokenizer_type + ".simpgenexps")
+
+        # 如果预处理后的特征文件存在，则从文件加载，否则从原始数据处理。
         if os.path.exists(savep):
-            logger.info("Loading examples from {}".format(savep))
+            logger.info("Loading examples from {}".format(savep))  # 从文件加载示例
             self.feats = torch.load(savep)
         else:
-            logger.info("Reading examples from {}".format(file_path))
+            logger.info("Reading examples from {}".format(file_path))  # 读取原始文件中的数据
             data = read_jsonl(file_path)
             # data = [dic for dic in data if len(dic["patch"].split("\n")) <= 20]
+            # 为每个数据项分配一个索引以跟踪。
             for i in range(len(data)):
                 data[i]["idx"] = i
-            logger.info(f"Tokenize examples: {file_path}")
-            # self.feats = pool.map(self.convert_examples_to_features, \
-            #     [(dic, tokenizer, args) for dic in data])
+
+            logger.info("Tokenize examples: {}".format(file_path))  # 对示例进行分词处理
+            # 转换所有示例为特征（这里展示的是单线程版本）
             self.feats = [self.convert_examples_to_features((dic, tokenizer, args)) for dic in data]
-            torch.save(self.feats, savep)
+            torch.save(self.feats, savep)  # 保存处理后的特征数据
 
     def convert_examples_to_features(self, item):
+        # 解包输入元组
         dic, tokenizer, args = item
+        # 从字典中获取代码差异和消息
         diff, msg = dic["patch"], dic["msg"]
-        difflines = diff.split("\n")[1:]  # remove start @@
-        difflines = [line for line in difflines if len(line.strip()) > 0]
-        map_dic = {"-": 0, "+": 1, " ": 2}
+        # 处理 diff，移除初始行和任何空行
+        difflines = diff.split("\n")[1:]
+        difflines = [line for line in difflines if line.strip()]  # 去掉空行
+
+        # 映射每行 diff 的第一个字符到数字标签
+        map_dic = {"-": 0, "+": 1, " ": 2}  # 映射 diff 符号到数字
 
         def f(s):
-            if s in map_dic:
-                return map_dic[s]
-            else:
-                return 2
+            return map_dic.get(s, 2)  # 将 diff 行首的字符转换为对应的数字标签
 
+        # 为 diff 中的每一行生成标签
         labels = [f(line[0]) for line in difflines]
+        # 去除行首的符号，并去掉空白字符
         difflines = [line[1:].strip() for line in difflines]
+
+        # 根据标签构建输入字符串
         inputstr = ""
         for label, line in zip(labels, difflines):
             if label == 1:
@@ -602,13 +629,20 @@ class SimpleGenDataset(TextDataset):
                 inputstr += "<del>" + line
             else:
                 inputstr += "<keep>" + line
+
+        # 对输入字符串进行编码
         source_ids = self.encode_remove(tokenizer, inputstr, args)
-        target_ids = []
-        target_ids.append(tokenizer.msg_id)
+        # 初始化目标 ID 列表
+        target_ids = [tokenizer.msg_id]  # 加入特殊的消息标识符
+        # 编码消息
         msg = self.encode_remove(tokenizer, dic["msg"], args)
         target_ids.extend(msg)
+        # 确保 source_ids 和 target_ids 的长度一致
         source_ids, target_ids = self.pad_assert(source_ids, target_ids, args, tokenizer)
+        # 初始化输入标签，用于后续模型训练
         input_labels = [-100] * len(source_ids)
+
+        # 返回处理好的特征
         return ReviewFeatures(dic["idx"], source_ids, input_labels, target_ids, type="genmsg")
 
 
@@ -883,3 +917,13 @@ def filter_stopwords(tokens):
             filter_tokens.append(token)
     return filter_tokens
 
+
+def read_jsonl(file_path):
+    with open(file_path, "r") as f:
+        for line in f:
+            json_obj = json.loads(line)
+            print(json_obj)
+
+if __name__ == '__main__':
+    file_path = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-train-small.jsonl"
+    read_jsonl(file_path)
