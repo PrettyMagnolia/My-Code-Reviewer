@@ -190,6 +190,9 @@ def build_or_load_gen_model(args):
     tokenizer.del_id = tokenizer.get_vocab()["<del>"]
     tokenizer.start_id = tokenizer.get_vocab()["<start>"]
     tokenizer.end_id = tokenizer.get_vocab()["<end>"]
+    # 设置注意力标记
+    tokenizer.add_tokens("<focus>")
+    tokenizer.focus_id = tokenizer.get_vocab()["<focus>"]
 
     # 打印模型加载信息
     logger.info(
@@ -216,3 +219,9 @@ def build_or_load_gen_model(args):
         model.to(args.local_rank)
 
     return config, model, tokenizer
+
+
+if __name__ == '__main__':
+    tokenizer_class = RobertaTokenizer
+    model_name_or_path = r'E:\0_Code\postgraduate\CodeReviewer\3_Pretrained_Model'
+    tokenizer = tokenizer_class.from_pretrained(model_name_or_path)

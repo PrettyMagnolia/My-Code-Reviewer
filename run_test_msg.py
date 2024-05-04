@@ -15,7 +15,7 @@ from models import build_or_load_gen_model
 from configs import add_args, set_seed, set_dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
-from utils import CommentGenDataset, SimpleGenDataset, attention_plot, read_stopwords, filter_stopwords
+from utils import CommentGenDataset, SimpleGenDataset, attention_plot, read_stopwords, filter_stopwords, top_k_token_dict, merge_dict
 from evaluator.smooth_bleu import bleu_fromstr
 import torch.nn.functional as F
 
@@ -101,6 +101,8 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
                 decoded_tokens.append(token)
         input_tokens = decoded_tokens
 
+        res_focus_dict = {}
+
         # 获取预测结果的长度 前两位为起始标志 因此真正的序列长度要-2
         seq_len = preds.size(1) - 2
         # 使用贪婪搜索时 cross_attention的长度为 seq_len+1
@@ -112,7 +114,6 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
             for j in range(len(cur_attentions)):
                 # 第j层的注意力
                 token_name = tokenizer.decode(preds[0][i + 1], skip_special_tokens=True, clean_up_tokenization_spaces=False)
-                print("生成第{}个token：{}时，第{}层的注意力".format(i, token_name, j + 1))
                 for k in range(cur_attentions[j].size(1)):
                     # print(cur_attentions[j][0, k, :])
                     output_tensor = cur_attentions[j][0, k, :]
@@ -121,12 +122,21 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
                         args.local_rank)
                     # 选择不在删除索引列表中的元素
                     new_tensor = torch.index_select(output_tensor, 1, indices_to_keep).to(args.local_rank)
-                    # 获取前10个最相关的token
+                    # 将token_id的注意力分数从大到小排序
                     top_values, top_indices = torch.topk(new_tensor, new_tensor.size(1))
+
+                    # 获取token列表和对应的注意力分数列表
                     top_tokens = [input_tokens[idx] for idx in top_indices[0].cpu().numpy()]
-                    # 过滤停用词
-                    top_tokens = filter_stopwords(top_tokens)
-                    print(f'layer{j + 1}: bert_attention_weight_head_{k + 1}:', top_tokens)
+                    top_values = [top_value for top_value in top_values[0].cpu().numpy()]
+
+                    # 获取前k个token和对应的注意力分数字典
+                    top_tokens_dict = top_k_token_dict(top_tokens, top_values, k=args.focus_len)
+
+                    # 合并字典
+                    res_focus_dict = merge_dict(res_focus_dict, top_tokens_dict)
+
+                    # # 获取
+                    # print(f'layer{j + 1}: bert_attention_weight_head_{k + 1}:', top_tokens_dict)
                     # # attention 归一化
                     # attentions_norm = F.normalize(top_values, p=2, dim=1)
                     # print(f'layer{j + 1}: bert_attention_weight_head_{k + 1}:', attentions_norm.cpu().numpy())
@@ -136,6 +146,9 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
                     #                y_texts=output_tokens, figsize=(15, 15),
                     #                figure_path='./figures',
                     #                figure_name='layer{}bert_attention_weight_head_{}.png'.format(j + 1, k + 1))
+        # 按照注意力分数从大到小排序 取前k个最高的key
+        res_focus = sorted(res_focus_dict, key=res_focus_dict.get, reverse=True)[:args.focus_len]
+        print("输入为：", input_tokens, "\n注意力为：", res_focus)
         top_preds = list(preds.cpu().numpy())
 
         probs = [torch.softmax(log, dim=-1) for log in logits]
@@ -143,7 +156,7 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
         for i, token_id in enumerate(top_preds[0][2:]):
             token_nls = tokenizer.decode(token_id, skip_special_tokens=True, clean_up_tokenization_spaces=False)
             token_pron = probs[i][0, token_id].item()
-            print(f"Token ID: {token_id}, Token nls: {token_nls}, Probability: {token_pron}")
+            # print(f"Token ID: {token_id}, Token nls: {token_nls}, Probability: {token_pron}")
         pred_ids.extend(top_preds)
 
     # 解码预测结果和参考答案
@@ -230,10 +243,18 @@ if __name__ == "__main__":
     args.master_addr = MASTER_HOST
     args.master_port = MASTER_PORT
 
+    # 服务器配置
     args.model_name_or_path = '/data/lyf/code/Code_Reviewer/3_Pretrained_Model'
     args.output_dir = '/data/lyf/code/Code_Reviewer/0_Result'
     args.load_model_path = '/data/lyf/code/Code_Reviewer/3_Pretrained_Model'
     args.eval_file = '/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-test-small.jsonl'
+
+    # 本地配置
+    args.model_name_or_path = r'E:\0_Code\postgraduate\CodeReviewer\3_Pretrained_Model'
+    args.output_dir = r'E:\0_Code\postgraduate\CodeReviewer\0_Result'
+    args.load_model_path = r'E:\0_Code\postgraduate\CodeReviewer\3_Pretrained_Model'
+    args.eval_file = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-test-small.jsonl"
+
     args.max_source_length = 512
     args.max_target_length = 128
     args.eval_batch_size = 1
@@ -246,6 +267,8 @@ if __name__ == "__main__":
     args.node_index = RANK
     args.seed = 2233
     args.raw_input = True
+
+    args.focus_len = 10
 
     os.environ['RANK'] = str(RANK)
     os.environ['WORLD_SIZE'] = str(WORLD_SIZE)

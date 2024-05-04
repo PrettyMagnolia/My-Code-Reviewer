@@ -364,6 +364,9 @@ if __name__ == "__main__":
 
     args.save_interval_epochs = 100
 
+    args.has_focus = True
+    args.focus_len = 10
+
     logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
     logger.info(args)
     # 初始化wandb

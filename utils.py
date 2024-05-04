@@ -441,11 +441,11 @@ class CommentGenDataset(TextDataset):
         if isinstance(tokenizer, MyTokenizer):
             tokenizer_type = "mytok"  # 自定义的 Tokenizer
         elif isinstance(tokenizer, T5Tokenizer):
-            tokenizer_type = ""       # T5 Tokenizer
+            tokenizer_type = ""  # T5 Tokenizer
         elif isinstance(tokenizer, RobertaTokenizer):
-            tokenizer_type = "rb"     # Roberta Tokenizer
+            tokenizer_type = "rb"  # Roberta Tokenizer
         else:
-            tokenizer_type = "unk"    # 未知 Tokenizer
+            tokenizer_type = "unk"  # 未知 Tokenizer
 
         # 替换文件扩展名以创建已处理示例的保存路径。
         savep = file_path.replace(".jsonl", tokenizer_type + ".exps")
@@ -483,7 +483,6 @@ class CommentGenDataset(TextDataset):
             return None
         # 生成评论特征
         return self.genmsg_example(item)
-
 
 
 class CommentClsDataset(TextDataset):
@@ -622,6 +621,12 @@ class SimpleGenDataset(TextDataset):
 
         # 根据标签构建输入字符串
         inputstr = ""
+
+        # 添加注意力标识
+        if args.has_focus:
+            focus = dic["focus"]
+            inputstr += "<focus>" + focus
+
         for label, line in zip(labels, difflines):
             if label == 1:
                 inputstr += "<add>" + line
@@ -904,18 +909,40 @@ def read_stopwords(file_path):
     return stopwords
 
 
-def filter_stopwords(tokens):
-    filter_tokens = []
+def filter_stopwords(tokens_dict):
+    filter_tokens = {}
     # 调用函数读取停用词列表
     stopwords_list = read_stopwords(os.path.join(os.path.dirname(__file__), "stop_words.txt"))
-    for token in tokens:
-        flag = True
-        for stopword in stopwords_list:
-            if stopword in token:
-                flag = False
-        if flag:
-            filter_tokens.append(token)
+    # 正确地遍历字典的键和值
+    for token, value in tokens_dict.items():
+        # 假设单词不是停用词
+        is_stopword = any(stopword in token for stopword in stopwords_list)
+        # 如果不是停用词，添加到新字典中
+        if not is_stopword:
+            filter_tokens[token] = value
     return filter_tokens
+
+
+def top_k_token_dict(tokens, values, k):
+    # 创建字典
+    token_dict = {}
+    for i in range(len(tokens)):
+        token_dict[tokens[i]] = values[i]
+    # 过滤停用词
+    filter_dict = filter_stopwords(token_dict)
+
+    # 直接使用字典切片来获取前k个键值对
+    return dict(list(filter_dict.items())[:k])
+
+
+def merge_dict(dict1, dict2):
+    for key, value in dict2.items():
+        if key in dict1:
+            dict1[key] += value
+        else:
+            dict1[key] = value
+
+    return dict1
 
 
 def read_jsonl(file_path):
@@ -923,6 +950,7 @@ def read_jsonl(file_path):
         for line in f:
             json_obj = json.loads(line)
             print(json_obj)
+
 
 if __name__ == '__main__':
     file_path = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-train-small.jsonl"
