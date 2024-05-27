@@ -623,7 +623,7 @@ class SimpleGenDataset(TextDataset):
         inputstr = ""
 
         # 添加注意力标识
-        if args.has_focus:
+        if args.has_focus and "focus" in dic:
             focus = dic["focus"]
             inputstr += "<focus>" + " ".join(focus)
 
@@ -985,21 +985,39 @@ def split_jsonl(json_path, output_dir, num_files=5):
         new_file_path = os.path.join(output_dir, f'train_part_{i+1}.jsonl')
         write_jsonl(chunk, new_file_path)
 
-
+def merge_jsonl(json_path_list, output_file):
+    merged_data = []
+    for json_path in json_path_list:
+        merged_data.extend(read_jsonl(json_path))
+    write_jsonl(merged_data, output_file)
 
 
 if __name__ == '__main__':
+    # 读取jsonl
     # file_path = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-train.jsonl"
     # data = read_jsonl(file_path)
 
-    part = 5
-    json_file = r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_{}.jsonl".format(part)
-    focus_file = r"/data/lyf/code/Code_Reviewer/0_Result/focus_train_part_{}.txt".format(part)
-    new_file = r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/new_train_part_{}.jsonl".format(part)
-    add_focus_info(json_path=json_file, focus_path=focus_file, new_file_path=new_file)
+    # 为jsonl添加focus信息
+    # part = 2
+    # json_file = r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_{}.jsonl".format(part)
+    # focus_file = r"/data/lyf/code/Code_Reviewer/0_Result/focus_train_part_{}.txt".format(part)
+    # new_file = r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/new_train_part_{}.jsonl".format(part)
+    # add_focus_info(json_path=json_file, focus_path=focus_file, new_file_path=new_file)
 
+    # 划分jsonl
     # json_file = r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train.jsonl"
     # output_dir = r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation"
     # split_jsonl(json_file, output_dir, num_files=5)
+
+    # 合并jsonl
+    jsonl_list = [
+        r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_1.jsonl",
+        r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_2.jsonl",
+        r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_3.jsonl",
+        r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_4.jsonl",
+        r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_5.jsonl"
+    ]
+    output_file = r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-focus.jsonl"
+    merge_jsonl(jsonl_list, output_file)
 
 
