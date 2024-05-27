@@ -64,6 +64,7 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
         model = model.module
 
     pred_ids, ex_ids = [], []
+    focus = []
 
     # 遍历评估数据加载器，生成预测结果
     for step, examples in tqdm(enumerate(eval_dataloader, 1)):
@@ -148,40 +149,53 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
                     #                figure_name='layer{}bert_attention_weight_head_{}.png'.format(j + 1, k + 1))
         # 按照注意力分数从大到小排序 取前k个最高的key
         res_focus = sorted(res_focus_dict, key=res_focus_dict.get, reverse=True)[:args.focus_len]
+        # focus.append(res_focus)
         print("输入为：", input_tokens, "\n注意力为：", res_focus)
-        top_preds = list(preds.cpu().numpy())
 
-        probs = [torch.softmax(log, dim=-1) for log in logits]
+        # 将模型的关注点写入文件
+        with open(os.path.join(args.output_dir, args.focus_file_name), "a", encoding="utf-8") as f:
+            foc_str = ', '.join(res_focus)
+            f.write(foc_str + "\n")
 
-        for i, token_id in enumerate(top_preds[0][2:]):
-            token_nls = tokenizer.decode(token_id, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-            token_pron = probs[i][0, token_id].item()
-            # print(f"Token ID: {token_id}, Token nls: {token_nls}, Probability: {token_pron}")
-        pred_ids.extend(top_preds)
+    #     top_preds = list(preds.cpu().numpy())
+    #
+    #     probs = [torch.softmax(log, dim=-1) for log in logits]
+    #
+    #     for i, token_id in enumerate(top_preds[0][2:]):
+    #         token_nls = tokenizer.decode(token_id, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+    #         token_pron = probs[i][0, token_id].item()
+    #         # print(f"Token ID: {token_id}, Token nls: {token_nls}, Probability: {token_pron}")
+    #     pred_ids.extend(top_preds)
+    #
+    # # 解码预测结果和参考答案
+    # pred_nls = [tokenizer.decode(id[2:], skip_special_tokens=True, clean_up_tokenization_spaces=False) for id in
+    #             pred_ids]
+    # valid_file = args.eval_file
+    # golds = []
+    # with open(valid_file, "r") as f:
+    #     for line in f:
+    #         golds.append(json.loads(line)["msg"])
+    # golds = golds[:len(pred_nls)]
+    #
+    # # 将预测结果和参考答案写入文件
+    # with open(os.path.join(args.output_dir, "preds.txt"), "w", encoding="utf-8") as f:
+    #     for pred in pred_nls:
+    #         f.write(pred.strip() + "\n")
+    # with open(os.path.join(args.output_dir, "golds.txt"), "w", encoding="utf-8") as f:
+    #     for gold in golds:
+    #         f.write(gold.strip() + "\n")
 
-    # 解码预测结果和参考答案
-    pred_nls = [tokenizer.decode(id[2:], skip_special_tokens=True, clean_up_tokenization_spaces=False) for id in
-                pred_ids]
-    valid_file = args.eval_file
-    golds = []
-    with open(valid_file, "r") as f:
-        for line in f:
-            golds.append(json.loads(line)["msg"])
-    golds = golds[:len(pred_nls)]
+    # # 将模型的关注点写入文件
+    # with open(os.path.join(args.output_dir, "focus.txt"), "w", encoding="utf-8") as f:
+    #     for foc in focus:
+    #         foc_str = ', '.join(foc)
+    #         f.write(foc_str + "\n")
 
-    # 将预测结果和参考答案写入文件
-    with open(os.path.join(args.model_name_or_path, "preds.txt"), "w", encoding="utf-8") as f:
-        for pred in pred_nls:
-            f.write(pred.strip() + "\n")
-    with open(os.path.join(args.model_name_or_path, "golds.txt"), "w", encoding="utf-8") as f:
-        for gold in golds:
-            f.write(gold.strip() + "\n")
-
-    # 计算 BLEU 分数
-    bleu = bleu_fromstr(pred_nls, golds, rmstop=False)
-    logger.warning(f"WithStop BLEU: {bleu}")
-    bleu = bleu_fromstr(pred_nls, golds, rmstop=True)
-    return bleu
+    # # 计算 BLEU 分数
+    # bleu = bleu_fromstr(pred_nls, golds, rmstop=False)
+    # logger.warning(f"WithStop BLEU: {bleu}")
+    # bleu = bleu_fromstr(pred_nls, golds, rmstop=True)
+    # return bleu
 
 
 def main(args):
@@ -196,6 +210,8 @@ def main(args):
 
     # 获取本地和全局排名
     local_rank = dist.get_rank() % args.gpu_per_node
+    local_rank = 1
+
     args.global_rank = local_rank + args.node_index * args.gpu_per_node
     args.local_rank = local_rank
     args.world_size = dist.get_world_size()
@@ -203,10 +219,12 @@ def main(args):
                    args.local_rank, args.global_rank,
                    torch.distributed.get_world_size(),
                    args.eval_batch_size)
+
     torch.cuda.set_device(local_rank)
 
     # 设置种子以及构建或加载生成模型
     set_seed(args)
+
     config, model, tokenizer = build_or_load_gen_model(args)
     model = DDP(model.cuda(), device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
     pool = multiprocessing.Pool(args.cpu_count)
@@ -228,8 +246,11 @@ if __name__ == "__main__":
     # 手动设置全局变量
     mnt_dir = "/home/codereview"
 
+    part = 6
+
+
     MASTER_HOST = "localhost"
-    MASTER_PORT = 23333
+    MASTER_PORT = 23333 + part - 1
     RANK = 0
     PER_NODE_GPU = 1
     WORLD_SIZE = 1
@@ -247,13 +268,16 @@ if __name__ == "__main__":
     args.model_name_or_path = '/data/lyf/code/Code_Reviewer/3_Pretrained_Model'
     args.output_dir = '/data/lyf/code/Code_Reviewer/0_Result'
     args.load_model_path = '/data/lyf/code/Code_Reviewer/3_Pretrained_Model'
-    args.eval_file = '/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-test-small.jsonl'
+    args.eval_file = '/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_{}.jsonl'.format(part)
+    args.eval_file = '/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-valid.jsonl'
+    args.focus_file_name = 'focus_train_part_{}.txt'.format(part)
+    args.focus_file_name = 'msg-valid.txt'
 
-    # 本地配置
-    args.model_name_or_path = r'E:\0_Code\postgraduate\CodeReviewer\3_Pretrained_Model'
-    args.output_dir = r'E:\0_Code\postgraduate\CodeReviewer\0_Result'
-    args.load_model_path = r'E:\0_Code\postgraduate\CodeReviewer\3_Pretrained_Model'
-    args.eval_file = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-test-small.jsonl"
+    # # 本地配置
+    # args.model_name_or_path = r'E:\0_Code\postgraduate\CodeReviewer\3_Pretrained_Model'
+    # args.output_dir = r'E:\0_Code\postgraduate\CodeReviewer\0_Result'
+    # args.load_model_path = r'E:\0_Code\postgraduate\CodeReviewer\3_Pretrained_Model'
+    # args.eval_file = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-test-small.jsonl"
 
     args.max_source_length = 512
     args.max_target_length = 128
@@ -269,6 +293,7 @@ if __name__ == "__main__":
     args.raw_input = True
 
     args.focus_len = 10
+    args.has_focus = False
 
     os.environ['RANK'] = str(RANK)
     os.environ['WORLD_SIZE'] = str(WORLD_SIZE)
@@ -279,6 +304,7 @@ if __name__ == "__main__":
     # remove long tokenization warning. ref: https://github.com/huggingface/transformers/issues/991
     logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
     logger.info(args)
+    print("Part: ", part)
     main(args)
     logger.info("Test finished.")
     # torch.multiprocessing.spawn(main, args=(args,), nprocs=torch.cuda.device_count())
