@@ -625,7 +625,7 @@ class SimpleGenDataset(TextDataset):
         # 添加注意力标识
         if args.has_focus:
             focus = dic["focus"]
-            inputstr += "<focus>" + focus
+            inputstr += "<focus>" + " ".join(focus)
 
         for label, line in zip(labels, difflines):
             if label == 1:
@@ -945,13 +945,61 @@ def merge_dict(dict1, dict2):
     return dict1
 
 
-def read_jsonl(file_path):
-    with open(file_path, "r") as f:
-        for line in f:
-            json_obj = json.loads(line)
-            print(json_obj)
+def read_focus(path):
+    data = []
+    with open(path, "r") as file:
+        for line in file.readlines():
+            # 使用 strip() 方法去除每个值的前后空格，并将结果以逗号分隔的形式拆分为列表
+            row = [value.strip() for value in line.strip().split(',')]
+            data.append(row)
+    return data
+
+
+def add_focus_info(json_path, focus_path, new_file_path):
+    json_data = read_jsonl(json_path)
+    focus_data = read_focus(focus_path)
+    for idx, data in enumerate(json_data):
+        print(f"Processing {idx}...")
+        data['focus'] = focus_data[idx]
+
+    with open(new_file_path, 'w') as f:
+        print(f"Writing to {new_file_path}...")
+        for obj in json_data:
+            f.write(json.dumps(obj) + '\n')
+
+
+def write_jsonl(data, file_path):
+    with open(file_path, 'w', encoding='utf-8') as f:
+        for entry in data:
+            f.write(json.dumps(entry) + '\n')
+
+def split_jsonl(json_path, output_dir, num_files=5):
+    json_data = read_jsonl(json_path)
+    total_lines = len(json_data)
+    lines_per_file = (total_lines + num_files - 1) // num_files  # Ensure even distribution
+
+    for i in range(num_files):
+        start_index = i * lines_per_file
+        end_index = min(start_index + lines_per_file, total_lines)
+        chunk = json_data[start_index:end_index]
+        new_file_path = os.path.join(output_dir, f'train_part_{i+1}.jsonl')
+        write_jsonl(chunk, new_file_path)
+
+
 
 
 if __name__ == '__main__':
-    file_path = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-train-small.jsonl"
-    read_jsonl(file_path)
+    # file_path = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-train.jsonl"
+    # data = read_jsonl(file_path)
+
+    part = 5
+    json_file = r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_{}.jsonl".format(part)
+    focus_file = r"/data/lyf/code/Code_Reviewer/0_Result/focus_train_part_{}.txt".format(part)
+    new_file = r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/new_train_part_{}.jsonl".format(part)
+    add_focus_info(json_path=json_file, focus_path=focus_file, new_file_path=new_file)
+
+    # json_file = r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train.jsonl"
+    # output_dir = r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation"
+    # split_jsonl(json_file, output_dir, num_files=5)
+
+
