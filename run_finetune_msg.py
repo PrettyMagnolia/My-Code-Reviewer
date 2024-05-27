@@ -220,11 +220,12 @@ def main(args):
             for step, examples in enumerate(train_dataloader, 1):
                 if step == 1:
                     # 打印第一个批次的信息
-                    ex = examples[0]
+                    # ex = examples[0]
                     # logger.info(f"batch size: {len(examples)}")
                     # logger.info(f"example source: {tokenizer.convert_ids_to_tokens(ex.source_ids)}")
                     # logger.info(f"example label: {tokenizer.convert_ids_to_tokens(ex.source_labels)}")
                     # logger.info(f"example target: {tokenizer.convert_ids_to_tokens(ex.target_ids)}")
+                    pass
 
                 # 将数据转换为张量并移到指定的设备
                 source_ids = torch.tensor(
@@ -277,6 +278,8 @@ def main(args):
                                 round(train_loss, 3),
                             )
                         )
+                        wandb.log({"Step Loss": train_loss}, step=global_step)
+
                 # 如果全局步数达到了训练步数，则进行验证并保存模型
                 if global_step == args.train_steps and args.global_rank == 0:
                     # end training
@@ -346,11 +349,12 @@ if __name__ == "__main__":
     args.train_epochs = 30
     args.model_name_or_path = "/data/lyf/code/Code_Reviewer/3_Pretrained_Model"
     args.output_dir = "/data/lyf/code/Code_Reviewer/0_Result"
-    args.train_filename = "/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-small.jsonl"
-    args.dev_filename = "/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-valid-small.jsonl"
+    args.train_filename = "/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-focus.jsonl"
+    # args.train_filename = "/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-small.jsonl"
+    args.dev_filename = "/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-valid.jsonl"
     args.max_source_length = 512
     args.max_target_length = 128
-    args.train_batch_size = 6
+    args.train_batch_size = 10
     args.learning_rate = 3e-4
     args.gradient_accumulation_steps = 3
     args.mask_rate = 0.15

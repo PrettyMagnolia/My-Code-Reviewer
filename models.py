@@ -171,8 +171,9 @@ def build_or_load_gen_model(args):
 
     # 从预训练模型路径加载配置信息、分词器和模型
     config = config_class.from_pretrained(args.model_name_or_path)
+    config.vocab_size += 1
     tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path)
-    model = model_class.from_pretrained(args.model_name_or_path, config=config)
+    model = model_class.from_pretrained(args.model_name_or_path, config=config, ignore_mismatched_sizes=True)
 
     # 为特殊标记创建特殊字典
     tokenizer.special_dict = {
