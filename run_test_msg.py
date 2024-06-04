@@ -76,7 +76,7 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
         outputs = model.generate(source_ids,
                                  attention_mask=source_mask,
                                  use_cache=True,
-                                 # num_beams=args.beam_size,
+                                 num_beams=args.beam_size,
                                  early_stopping=True,
                                  max_length=args.max_target_length,
                                  output_attentions=True,
@@ -105,97 +105,92 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
         res_focus_dict = {}
 
         # 获取预测结果的长度 前两位为起始标志 因此真正的序列长度要-2
-        seq_len = preds.size(1) - 2
-        # 使用贪婪搜索时 cross_attention的长度为 seq_len+1
-        for i in range(len(cross_attentions)):
-            output_tokens = [
-                tokenizer.decode([preds[0][i + 1]], skip_special_tokens=True, clean_up_tokenization_spaces=False)]
-            # 生成第i个token时注意力的情况
-            cur_attentions = cross_attentions[i]
-            for j in range(len(cur_attentions)):
-                # 第j层的注意力
-                token_name = tokenizer.decode(preds[0][i + 1], skip_special_tokens=True, clean_up_tokenization_spaces=False)
-                for k in range(cur_attentions[j].size(1)):
-                    # print(cur_attentions[j][0, k, :])
-                    output_tensor = cur_attentions[j][0, k, :]
-                    all_indices = list(range(output_tensor.size(1)))
-                    indices_to_keep = torch.tensor(list(set(all_indices) - set(special_token_indices))).to(
-                        args.local_rank)
-                    # 选择不在删除索引列表中的元素
-                    new_tensor = torch.index_select(output_tensor, 1, indices_to_keep).to(args.local_rank)
-                    # 将token_id的注意力分数从大到小排序
-                    top_values, top_indices = torch.topk(new_tensor, new_tensor.size(1))
+        # if args.has_focus:
+        #     seq_len = preds.size(1) - 2
+        #     # 使用贪婪搜索时 cross_attention的长度为 seq_len+1
+        #     for i in range(len(cross_attentions)):
+        #         output_tokens = [
+        #             tokenizer.decode([preds[0][i + 1]], skip_special_tokens=True, clean_up_tokenization_spaces=False)]
+        #         # 生成第i个token时注意力的情况
+        #         cur_attentions = cross_attentions[i]
+        #         for j in range(len(cur_attentions)):
+        #             # 第j层的注意力
+        #             token_name = tokenizer.decode(preds[0][i + 1], skip_special_tokens=True, clean_up_tokenization_spaces=False)
+        #             for k in range(cur_attentions[j].size(1)):
+        #                 # print(cur_attentions[j][0, k, :])
+        #                 output_tensor = cur_attentions[j][0, k, :]
+        #                 all_indices = list(range(output_tensor.size(1)))
+        #                 indices_to_keep = torch.tensor(list(set(all_indices) - set(special_token_indices))).to(
+        #                     args.local_rank)
+        #                 # 选择不在删除索引列表中的元素
+        #                 new_tensor = torch.index_select(output_tensor, 1, indices_to_keep).to(args.local_rank)
+        #                 # 将token_id的注意力分数从大到小排序
+        #                 top_values, top_indices = torch.topk(new_tensor, new_tensor.size(1))
+        #
+        #                 # 获取token列表和对应的注意力分数列表
+        #                 top_tokens = [input_tokens[idx] for idx in top_indices[0].cpu().numpy()]
+        #                 top_values = [top_value for top_value in top_values[0].cpu().numpy()]
+        #
+        #                 # 获取前k个token和对应的注意力分数字典
+        #                 top_tokens_dict = top_k_token_dict(top_tokens, top_values, k=args.focus_len)
+        #
+        #                 # 合并字典
+        #                 res_focus_dict = merge_dict(res_focus_dict, top_tokens_dict)
+        #
+        #                 # # 获取
+        #                 # print(f'layer{j + 1}: bert_attention_weight_head_{k + 1}:', top_tokens_dict)
+        #                 # # attention 归一化
+        #                 # attentions_norm = F.normalize(top_values, p=2, dim=1)
+        #                 # print(f'layer{j + 1}: bert_attention_weight_head_{k + 1}:', attentions_norm.cpu().numpy())
+        #                 # # 显示第ii个Head的Attention
+        #                 # attention_plot(attentions_norm.cpu().numpy(), annot=True,
+        #                 #                x_texts=top_tokens,
+        #                 #                y_texts=output_tokens, figsize=(15, 15),
+        #                 #                figure_path='./figures',
+        #                 #                figure_name='layer{}bert_attention_weight_head_{}.png'.format(j + 1, k + 1))
+        #     # 按照注意力分数从大到小排序 取前k个最高的key
+        #     res_focus = sorted(res_focus_dict, key=res_focus_dict.get, reverse=True)[:args.focus_len]
+        #     # focus.append(res_focus)
+        #
+        #     # 将模型的关注点写入文件
+        #     print("输入为：", input_tokens, "\n注意力为：", res_focus)
+        #     with open(os.path.join(args.output_dir, args.focus_file_name), "a", encoding="utf-8") as f:
+        #         foc_str = ', '.join(res_focus)
+        #         f.write(foc_str + "\n")
 
-                    # 获取token列表和对应的注意力分数列表
-                    top_tokens = [input_tokens[idx] for idx in top_indices[0].cpu().numpy()]
-                    top_values = [top_value for top_value in top_values[0].cpu().numpy()]
+        top_preds = list(preds.cpu().numpy())
 
-                    # 获取前k个token和对应的注意力分数字典
-                    top_tokens_dict = top_k_token_dict(top_tokens, top_values, k=args.focus_len)
+        probs = [torch.softmax(log, dim=-1) for log in logits]
 
-                    # 合并字典
-                    res_focus_dict = merge_dict(res_focus_dict, top_tokens_dict)
+        for i, token_id in enumerate(top_preds[0][2:]):
+            token_nls = tokenizer.decode(token_id, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+            token_pron = probs[i][0, token_id].item()
+            # print(f"Token ID: {token_id}, Token nls: {token_nls}, Probability: {token_pron}")
+        pred_ids.extend(top_preds)
 
-                    # # 获取
-                    # print(f'layer{j + 1}: bert_attention_weight_head_{k + 1}:', top_tokens_dict)
-                    # # attention 归一化
-                    # attentions_norm = F.normalize(top_values, p=2, dim=1)
-                    # print(f'layer{j + 1}: bert_attention_weight_head_{k + 1}:', attentions_norm.cpu().numpy())
-                    # # 显示第ii个Head的Attention
-                    # attention_plot(attentions_norm.cpu().numpy(), annot=True,
-                    #                x_texts=top_tokens,
-                    #                y_texts=output_tokens, figsize=(15, 15),
-                    #                figure_path='./figures',
-                    #                figure_name='layer{}bert_attention_weight_head_{}.png'.format(j + 1, k + 1))
-        # 按照注意力分数从大到小排序 取前k个最高的key
-        res_focus = sorted(res_focus_dict, key=res_focus_dict.get, reverse=True)[:args.focus_len]
-        # focus.append(res_focus)
-        print("输入为：", input_tokens, "\n注意力为：", res_focus)
+    # 解码预测结果和参考答案
+    pred_nls = [tokenizer.decode(id[2:], skip_special_tokens=True, clean_up_tokenization_spaces=False) for id in
+                pred_ids]
+    valid_file = args.eval_file
+    golds = []
+    with open(valid_file, "r") as f:
+        for line in f:
+            golds.append(json.loads(line)["msg"])
+    golds = golds[:len(pred_nls)]
 
-        # 将模型的关注点写入文件
-        with open(os.path.join(args.output_dir, args.focus_file_name), "a", encoding="utf-8") as f:
-            foc_str = ', '.join(res_focus)
-            f.write(foc_str + "\n")
-
-    #     top_preds = list(preds.cpu().numpy())
-    #
-    #     probs = [torch.softmax(log, dim=-1) for log in logits]
-    #
-    #     for i, token_id in enumerate(top_preds[0][2:]):
-    #         token_nls = tokenizer.decode(token_id, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-    #         token_pron = probs[i][0, token_id].item()
-    #         # print(f"Token ID: {token_id}, Token nls: {token_nls}, Probability: {token_pron}")
-    #     pred_ids.extend(top_preds)
-    #
-    # # 解码预测结果和参考答案
-    # pred_nls = [tokenizer.decode(id[2:], skip_special_tokens=True, clean_up_tokenization_spaces=False) for id in
-    #             pred_ids]
-    # valid_file = args.eval_file
-    # golds = []
-    # with open(valid_file, "r") as f:
-    #     for line in f:
-    #         golds.append(json.loads(line)["msg"])
-    # golds = golds[:len(pred_nls)]
-    #
-    # # 将预测结果和参考答案写入文件
-    # with open(os.path.join(args.output_dir, "preds.txt"), "w", encoding="utf-8") as f:
-    #     for pred in pred_nls:
-    #         f.write(pred.strip() + "\n")
-    # with open(os.path.join(args.output_dir, "golds.txt"), "w", encoding="utf-8") as f:
+    # 将预测结果和参考答案写入文件
+    with open(os.path.join(args.output_dir, "preds_{}.txt".format(args.check)), "w", encoding="utf-8") as f:
+        for pred in pred_nls:
+            f.write(pred.strip() + "\n")
+    # with open(os.path.join(args.output_dir, "golds_{}.txt".format(args.check)), "w", encoding="utf-8") as f:
     #     for gold in golds:
     #         f.write(gold.strip() + "\n")
 
-    # # 将模型的关注点写入文件
-    # with open(os.path.join(args.output_dir, "focus.txt"), "w", encoding="utf-8") as f:
-    #     for foc in focus:
-    #         foc_str = ', '.join(foc)
-    #         f.write(foc_str + "\n")
-
-    # # 计算 BLEU 分数
-    # bleu = bleu_fromstr(pred_nls, golds, rmstop=False)
-    # logger.warning(f"WithStop BLEU: {bleu}")
-    # bleu = bleu_fromstr(pred_nls, golds, rmstop=True)
-    # return bleu
+    # 计算 BLEU 分数
+    bleu = bleu_fromstr(pred_nls, golds, rmstop=False)
+    logger.warning(f"WithStop BLEU: {bleu}")
+    bleu = bleu_fromstr(pred_nls, golds, rmstop=True)
+    return bleu
 
 
 def main(args):
@@ -206,7 +201,7 @@ def main(args):
         args (argparse.Namespace): 命令行参数对象。
     """
     # 初始化进程组
-    dist.init_process_group(backend="gloo")
+    dist.init_process_group(backend="nccl")
 
     # 获取本地和全局排名
     local_rank = dist.get_rank() % args.gpu_per_node
@@ -248,7 +243,6 @@ if __name__ == "__main__":
 
     part = 6
 
-
     MASTER_HOST = "localhost"
     MASTER_PORT = 23333 + part - 1
     RANK = 0
@@ -265,11 +259,18 @@ if __name__ == "__main__":
     args.master_port = MASTER_PORT
 
     # 服务器配置
+    args.check = 99000
     args.model_name_or_path = '/data/lyf/code/Code_Reviewer/3_Pretrained_Model'
-    args.output_dir = '/data/lyf/code/Code_Reviewer/0_Result'
+    args.model_name_or_path = '/data/lyf/code/Code_Reviewer/0_Result/checkpoints-{}-'.format(args.check)
+    args.output_dir = '/data/lyf/code/Code_Reviewer/0_Result/preds'
     args.load_model_path = '/data/lyf/code/Code_Reviewer/3_Pretrained_Model'
-    args.eval_file = '/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_{}.jsonl'.format(part)
-    args.eval_file = '/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-valid.jsonl'
+    args.load_model_path = '/data/lyf/code/Code_Reviewer/0_Result/checkpoints-{}-'.format(args.check)
+    # args.eval_file = '/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_{}.jsonl'.format(part)
+    args.eval_file = '/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-test-focus-label.jsonl'
+    args.exp_time = time.strftime("-%Y%m%d-%H_%M_%S", time.localtime(int(round(time.time() * 1000)) / 1000))
+
+    args.focus_len = 10
+    args.has_focus = True
     args.focus_file_name = 'focus_train_part_{}.txt'.format(part)
     args.focus_file_name = 'msg-valid.txt'
 
@@ -281,7 +282,7 @@ if __name__ == "__main__":
 
     args.max_source_length = 512
     args.max_target_length = 128
-    args.eval_batch_size = 1
+    args.eval_batch_size = 6
     args.mask_rate = 0.15
     args.save_steps = 1800
     args.beam_size = 10
@@ -291,9 +292,6 @@ if __name__ == "__main__":
     args.node_index = RANK
     args.seed = 2233
     args.raw_input = True
-
-    args.focus_len = 10
-    args.has_focus = False
 
     os.environ['RANK'] = str(RANK)
     os.environ['WORLD_SIZE'] = str(WORLD_SIZE)
