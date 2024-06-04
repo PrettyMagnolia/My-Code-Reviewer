@@ -227,9 +227,24 @@ def bleuFromMaps(m1, m2):
 
 
 if __name__ == '__main__':
-    reference_file = sys.argv[1]
-    predictions = []
-    for row in sys.stdin:
-        predictions.append(row)
-    (goldMap, predictionMap) = computeMaps(predictions, reference_file)
-    print(bleuFromMaps(goldMap, predictionMap)[0])
+    # reference_file = sys.argv[1]
+    # predictions = []
+    # for row in sys.stdin:
+    #     predictions.append(row)
+    # (goldMap, predictionMap) = computeMaps(predictions, reference_file)
+    # print(bleuFromMaps(goldMap, predictionMap)[0])
+
+    # 读取txt文件变成列表
+    time = '20240529-13_19_30'
+    pred_path = '/data/lyf/code/Code_Reviewer/0_Result/preds_-{}.txt'.format(time)
+    with open(pred_path, 'r', encoding='utf-8') as file:
+        lines = file.readlines()
+        # 去掉每行末尾的换行符，并返回列表
+        pred = [line.strip() for line in lines]
+    gold_path = '/data/lyf/code/Code_Reviewer/0_Result/golds_-{}.txt'.format(time)
+    with open(gold_path, 'r', encoding='utf-8') as file:
+        lines = file.readlines()
+        gold = [line.strip() for line in lines]
+    # 计算BLEU值
+    bleu_score = bleu_fromstr(pred, gold)
+    print(bleu_score)

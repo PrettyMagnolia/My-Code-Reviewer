@@ -100,17 +100,17 @@ def save_model(model, optimizer, scheduler, output_dir, config):
     output_model_file = os.path.join(output_dir, "pytorch_model.bin")
     torch.save(model_to_save.state_dict(), output_model_file)
     output_optimizer_file = os.path.join(output_dir, "optimizer.pt")
-    torch.save(
-        optimizer.state_dict(),
-        output_optimizer_file,
-        _use_new_zipfile_serialization=False,
-    )
+    # torch.save(
+    #     optimizer.state_dict(),
+    #     output_optimizer_file,
+    #     _use_new_zipfile_serialization=False,
+    # )
     output_scheduler_file = os.path.join(output_dir, "scheduler.pt")
-    torch.save(
-        scheduler.state_dict(),
-        output_scheduler_file,
-        _use_new_zipfile_serialization=False,
-    )
+    # torch.save(
+    #     scheduler.state_dict(),
+    #     output_scheduler_file,
+    #     _use_new_zipfile_serialization=False,
+    # )
 
 
 def main(args):
@@ -118,6 +118,7 @@ def main(args):
     local_rank = dist.get_rank() % args.gpu_per_node
     args.global_rank = local_rank + args.node_index * args.gpu_per_node
     args.local_rank = local_rank
+    args.local_rank = 1
     args.world_size = dist.get_world_size()
     logger.warning("Process rank: %s, global rank: %s, world size: %s, bs: %s",
                    args.local_rank, args.global_rank, \
@@ -281,21 +282,22 @@ def main(args):
                         wandb.log({"Step Loss": train_loss}, step=global_step)
 
                 # 如果全局步数达到了训练步数，则进行验证并保存模型
-                if global_step == args.train_steps and args.global_rank == 0:
-                    # end training
-                    _, _, valid_dataloader = next(get_loaders(valid_files, args, tokenizer, pool, eval=True))
-                    bleu = eval_bleu_epoch(args, valid_dataloader, model, tokenizer)
-                    output_dir = os.path.join(args.output_dir, "checkpoints-last" + "-" + str(bleu))
-                    save_model(model, optimizer, scheduler, output_dir, config)
-                    logger.info(f"Reach max steps {args.train_steps}.")
-                    time.sleep(5)
-                    return
+                # if global_step == args.train_steps and args.global_rank == 0:
+                #     # end training
+                #     _, _, valid_dataloader = next(get_loaders(valid_files, args, tokenizer, pool, eval=True))
+                #     bleu = eval_bleu_epoch(args, valid_dataloader, model, tokenizer)
+                #     output_dir = os.path.join(args.output_dir, "checkpoints-last" + "-" + str(bleu))
+                #     save_model(model, optimizer, scheduler, output_dir, config)
+                #     logger.info(f"Reach max steps {args.train_steps}.")
+                #     time.sleep(5)
+                #     return
                 # 如果全局排名为 0 的进程，且满足保存步数条件，则进行验证并保存模型
                 if args.global_rank == 0 and \
                         global_step % save_steps == 0 and \
                         nb_tr_steps % args.gradient_accumulation_steps == 0:
-                    _, _, valid_dataloader = next(get_loaders(valid_files, args, tokenizer, pool, eval=True))
-                    bleu = eval_bleu_epoch(args, valid_dataloader, model, tokenizer)
+                    # _, _, valid_dataloader = next(get_loaders(valid_files, args, tokenizer, pool, eval=True))
+                    # bleu = eval_bleu_epoch(args, valid_dataloader, model, tokenizer)
+                    bleu = ''
                     output_dir = os.path.join(args.output_dir, "checkpoints-" + str(global_step) + "-" + str(bleu))
                     save_model(model, optimizer, scheduler, output_dir, config)
                     logger.info(
@@ -311,8 +313,9 @@ def main(args):
 
         # 判断是否到了指定的epoch，保存模型
         if epoch % args.save_interval_epochs == 0 or epoch == args.train_epochs:
-            _, _, valid_dataloader = next(get_loaders(valid_files, args, tokenizer, pool, eval=True))
-            bleu = eval_bleu_epoch(args, valid_dataloader, model, tokenizer)
+            # _, _, valid_dataloader = next(get_loaders(valid_files, args, tokenizer, pool, eval=True))
+            # bleu = eval_bleu_epoch(args, valid_dataloader, model, tokenizer)
+            bleu = ''
             output_dir = os.path.join(args.output_dir, "checkpoints-" + str(global_step) + "-" + str(bleu))
             save_model(model, optimizer, scheduler, output_dir, config)
             logger.info(
@@ -328,7 +331,7 @@ if __name__ == "__main__":
     mnt_dir = "/home/codereview"
 
     MASTER_HOST = "localhost"
-    MASTER_PORT = 23333
+    MASTER_PORT = 23336
     RANK = 0
     PER_NODE_GPU = 1
     WORLD_SIZE = 1
@@ -349,12 +352,12 @@ if __name__ == "__main__":
     args.train_epochs = 30
     args.model_name_or_path = "/data/lyf/code/Code_Reviewer/3_Pretrained_Model"
     args.output_dir = "/data/lyf/code/Code_Reviewer/0_Result"
-    args.train_filename = "/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-focus.jsonl"
+    args.train_filename = "/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-focus-label.jsonl"
     # args.train_filename = "/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-small.jsonl"
     args.dev_filename = "/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-valid.jsonl"
     args.max_source_length = 512
     args.max_target_length = 128
-    args.train_batch_size = 10
+    args.train_batch_size = 6
     args.learning_rate = 3e-4
     args.gradient_accumulation_steps = 3
     args.mask_rate = 0.15

@@ -1,3 +1,4 @@
+import csv
 import re, json
 import os, random
 import torch, logging
@@ -623,9 +624,14 @@ class SimpleGenDataset(TextDataset):
         inputstr = ""
 
         # 添加注意力标识
-        if args.has_focus and "focus" in dic:
-            focus = dic["focus"]
-            inputstr += "<focus>" + " ".join(focus)
+        if args.has_focus:
+            if "true_focus" in dic and "other_focus" in dic:
+                true_focus = dic["true_focus"]
+                inputstr += "<true_focus>" + " ".join(true_focus)
+                other_focus = dic["other_focus"]
+                inputstr += "<other_focus>" + " ".join(other_focus)
+            else:
+                raise ValueError("Focus not found in the data.")
 
         for label, line in zip(labels, difflines):
             if label == 1:
@@ -973,6 +979,7 @@ def write_jsonl(data, file_path):
         for entry in data:
             f.write(json.dumps(entry) + '\n')
 
+
 def split_jsonl(json_path, output_dir, num_files=5):
     json_data = read_jsonl(json_path)
     total_lines = len(json_data)
@@ -982,14 +989,70 @@ def split_jsonl(json_path, output_dir, num_files=5):
         start_index = i * lines_per_file
         end_index = min(start_index + lines_per_file, total_lines)
         chunk = json_data[start_index:end_index]
-        new_file_path = os.path.join(output_dir, f'train_part_{i+1}.jsonl')
+        new_file_path = os.path.join(output_dir, f'train_part_{i + 1}.jsonl')
         write_jsonl(chunk, new_file_path)
+
 
 def merge_jsonl(json_path_list, output_file):
     merged_data = []
     for json_path in json_path_list:
         merged_data.extend(read_jsonl(json_path))
     write_jsonl(merged_data, output_file)
+
+
+# 遍历jsonl文件，找到msg属性中有 because 的数据
+def find_because(json_path):
+    json_data = read_jsonl(json_path)
+    because_data = []
+    for idx, data in enumerate(json_data):
+        if "because" in data["msg"]:
+            because_data.append(data['msg'])
+    return because_data
+
+
+def get_all_msg(json_path):
+    json_data = read_jsonl(json_path)
+    all_msg = []
+    for data in json_data:
+        all_msg.append(data['msg'])
+        print(data['msg'])
+    return all_msg
+
+
+def save_to_csv(data, csv_path):
+    with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(['text'])  # 写入表头
+        for msg in data:
+            writer.writerow([msg])
+
+
+def add_target_focus(json_path, output_path):
+    # 用于匹配反引号包围的内容的正则表达式
+    pattern = re.compile(r'`(.*?)`')
+    data = read_jsonl(json_path)
+    for line in data:
+        msg = line['msg']
+        matches = pattern.findall(msg)
+        tfocus = ' '.join(matches)
+        focus = line['focus']
+        true_focus = []
+        other_focus = []
+        for f in focus:
+            if f in msg:
+                true_focus.append(f)
+            else:
+                other_focus.append(f)
+
+        line['true_focus'] = true_focus
+        line['other_focus'] = other_focus
+
+    with open(output_path, 'w') as f:
+        print(f"Writing to {output_path}...")
+        for obj in data:
+            f.write(json.dumps(obj) + '\n')
+
+
 
 
 if __name__ == '__main__':
@@ -999,9 +1062,9 @@ if __name__ == '__main__':
 
     # 为jsonl添加focus信息
     # part = 2
-    # json_file = r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_{}.jsonl".format(part)
-    # focus_file = r"/data/lyf/code/Code_Reviewer/0_Result/focus_train_part_{}.txt".format(part)
-    # new_file = r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/new_train_part_{}.jsonl".format(part)
+    # json_file = r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-test.jsonl"
+    # focus_file = r"/data/lyf/code/Code_Reviewer/0_Result/msg-test.txt"
+    # new_file = r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-test-focus.jsonl"
     # add_focus_info(json_path=json_file, focus_path=focus_file, new_file_path=new_file)
 
     # 划分jsonl
@@ -1010,14 +1073,22 @@ if __name__ == '__main__':
     # split_jsonl(json_file, output_dir, num_files=5)
 
     # 合并jsonl
-    jsonl_list = [
-        r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_1.jsonl",
-        r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_2.jsonl",
-        r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_3.jsonl",
-        r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_4.jsonl",
-        r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_5.jsonl"
-    ]
-    output_file = r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-focus.jsonl"
-    merge_jsonl(jsonl_list, output_file)
+    # jsonl_list = [
+    #     r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/new_train_part_1.jsonl",
+    #     r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/new_train_part_2.jsonl",
+    #     r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/new_train_part_3.jsonl",
+    #     r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/new_train_part_4.jsonl",
+    #     r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/new_train_part_5.jsonl"
+    # ]
+    # output_file = r"/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-focus.jsonl"
+    # merge_jsonl(jsonl_list, output_file)
 
+    # 获取所有msg数据 存储为csv
+    # jsonl_file = r'/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train.jsonl'
+    # csv_file = r'/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train.csv'
+    # all_msg = get_all_msg(json_path=jsonl_file)
+    # save_to_csv(all_msg, csv_file)
 
+    json_file = r'/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-test-focus-label.jsonl'
+    output_file = r'/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-test-focus-label.jsonl'
+    add_target_focus(json_file, output_file)

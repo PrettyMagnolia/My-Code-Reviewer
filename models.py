@@ -171,7 +171,7 @@ def build_or_load_gen_model(args):
 
     # 从预训练模型路径加载配置信息、分词器和模型
     config = config_class.from_pretrained(args.model_name_or_path)
-    config.vocab_size += 1
+    # config.vocab_size += 2
     tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path)
     model = model_class.from_pretrained(args.model_name_or_path, config=config, ignore_mismatched_sizes=True)
 
@@ -191,9 +191,12 @@ def build_or_load_gen_model(args):
     tokenizer.del_id = tokenizer.get_vocab()["<del>"]
     tokenizer.start_id = tokenizer.get_vocab()["<start>"]
     tokenizer.end_id = tokenizer.get_vocab()["<end>"]
+
     # 设置注意力标记
-    tokenizer.add_tokens("<focus>")
-    tokenizer.focus_id = tokenizer.get_vocab()["<focus>"]
+    tokenizer.add_tokens("<true_focus>")
+    tokenizer.focus_id = tokenizer.get_vocab()["<true_focus>"]
+    tokenizer.add_tokens("<other_focus>")
+    tokenizer.focus_id = tokenizer.get_vocab()["<other_focus>"]
 
     # 打印模型加载信息
     logger.info(
