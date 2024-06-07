@@ -76,8 +76,10 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
         outputs = model.generate(source_ids,
                                  attention_mask=source_mask,
                                  use_cache=True,
-                                 num_beams=args.beam_size,
-                                 early_stopping=True,
+                                 # num_beams=args.beam_size,
+                                 # early_stopping=True,
+                                 do_sample=True,
+                                 top_k=args.topk,
                                  max_length=args.max_target_length,
                                  output_attentions=True,
                                  output_hidden_states=True,
@@ -179,7 +181,7 @@ def eval_epoch_bleu(args, eval_dataloader, model, tokenizer):
     golds = golds[:len(pred_nls)]
 
     # 将预测结果和参考答案写入文件
-    with open(os.path.join(args.output_dir, "preds_{}.txt".format(args.check)), "w", encoding="utf-8") as f:
+    with open(os.path.join(args.output_dir, "preds_origin_topk{}.txt".format(args.topk)), "w", encoding="utf-8") as f:
         for pred in pred_nls:
             f.write(pred.strip() + "\n")
     # with open(os.path.join(args.output_dir, "golds_{}.txt".format(args.check)), "w", encoding="utf-8") as f:
@@ -205,6 +207,7 @@ def main(args):
 
     # 获取本地和全局排名
     local_rank = dist.get_rank() % args.gpu_per_node
+    # todo 修改使用的gpu号
     local_rank = 1
 
     args.global_rank = local_rank + args.node_index * args.gpu_per_node
@@ -259,20 +262,23 @@ if __name__ == "__main__":
     args.master_port = MASTER_PORT
 
     # 服务器配置
-    args.check = 99000
+    args.file_name = "checkpoints-57600-"
     args.model_name_or_path = '/data/lyf/code/Code_Reviewer/3_Pretrained_Model'
-    args.model_name_or_path = '/data/lyf/code/Code_Reviewer/0_Result/checkpoints-{}-'.format(args.check)
+    # args.model_name_or_path = '/data/lyf/code/Code_Reviewer/0_Result/{}'.format(args.file_name)
     args.output_dir = '/data/lyf/code/Code_Reviewer/0_Result/preds'
     args.load_model_path = '/data/lyf/code/Code_Reviewer/3_Pretrained_Model'
-    args.load_model_path = '/data/lyf/code/Code_Reviewer/0_Result/checkpoints-{}-'.format(args.check)
+    # args.load_model_path = '/data/lyf/code/Code_Reviewer/0_Result/{}'.format(args.file_name)
     # args.eval_file = '/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_{}.jsonl'.format(part)
     args.eval_file = '/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-test-focus-label.jsonl'
     args.exp_time = time.strftime("-%Y%m%d-%H_%M_%S", time.localtime(int(round(time.time() * 1000)) / 1000))
 
     args.focus_len = 10
-    args.has_focus = True
+    args.has_focus = False
     args.focus_file_name = 'focus_train_part_{}.txt'.format(part)
     args.focus_file_name = 'msg-valid.txt'
+    args.do_test = True
+
+    args.topk = 10
 
     # # 本地配置
     # args.model_name_or_path = r'E:\0_Code\postgraduate\CodeReviewer\3_Pretrained_Model'

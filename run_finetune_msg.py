@@ -306,6 +306,9 @@ def main(args):
                         )
                     )
                     time.sleep(5)
+
+                if global_step == 61000:
+                    return
         # 输出每个epoch的平均loss
         avg_epoch_loss = tr_loss / nb_tr_steps
         logger.info(f"Epoch {epoch}: Average Loss = {avg_epoch_loss}")
@@ -352,7 +355,7 @@ if __name__ == "__main__":
     args.train_epochs = 30
     args.model_name_or_path = "/data/lyf/code/Code_Reviewer/3_Pretrained_Model"
     args.output_dir = "/data/lyf/code/Code_Reviewer/0_Result"
-    args.train_filename = "/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-focus-label.jsonl"
+    args.train_filename = "/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-focus-label-explain.jsonl"
     # args.train_filename = "/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-small.jsonl"
     args.dev_filename = "/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-valid.jsonl"
     args.max_source_length = 512
@@ -361,7 +364,7 @@ if __name__ == "__main__":
     args.learning_rate = 3e-4
     args.gradient_accumulation_steps = 3
     args.mask_rate = 0.15
-    args.save_steps = 1800
+    args.save_steps = 3600
     args.log_steps = 100
     args.train_steps = 60000
     args.gpu_per_node = PER_NODE_GPU
@@ -371,7 +374,7 @@ if __name__ == "__main__":
 
     args.save_interval_epochs = 100
 
-    args.has_focus = True
+    args.has_focus = False
     args.focus_len = 10
 
     logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)

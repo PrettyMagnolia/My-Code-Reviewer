@@ -171,7 +171,8 @@ def build_or_load_gen_model(args):
 
     # 从预训练模型路径加载配置信息、分词器和模型
     config = config_class.from_pretrained(args.model_name_or_path)
-    # config.vocab_size += 2
+    if not args.do_test:
+        config.vocab_size += 2
     tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path)
     model = model_class.from_pretrained(args.model_name_or_path, config=config, ignore_mismatched_sizes=True)
 
