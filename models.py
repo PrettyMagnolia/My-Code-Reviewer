@@ -17,6 +17,7 @@ from transformers import (
     T5Tokenizer,
 )
 import logging
+from casual import predict
 
 logger = logging.getLogger(__name__)
 
@@ -89,8 +90,31 @@ class ReviewerModel(T5ForConditionalGeneration):
                 encoder_loss = True
             else:
                 encoder_loss = kwargs["encoder_loss"]
+
+            # 用于解释性信息
+            if "explain_label" not in kwargs:
+                explain_label = None
+            else:
+                explain_label = kwargs["explain_label"]
+            if "tokenizer" not in kwargs:
+                tokenizer = None
+            else:
+                tokenizer = kwargs["tokenizer"]
+            if "casual_model" not in kwargs:
+                casual_model = None
+            else:
+                casual_model = kwargs["casual_model"]
+            if "casual_tokenizer" not in kwargs:
+                casual_tokenizer = None
+            else:
+                casual_tokenizer = kwargs["casual_tokenizer"]
+            if "local_rank" not in kwargs:
+                local_rank = None
+            else:
+                local_rank = kwargs["local_rank"]
+
             return self.review_forward(input_ids, input_labels, decoder_input_ids, attention_mask,
-                                       decoder_attention_mask, encoder_loss)
+                                       decoder_attention_mask, encoder_loss, explain_label, tokenizer, casual_model, casual_tokenizer, local_rank)
         return super().forward(*argv, **kwargs)
 
     def cls(
@@ -122,7 +146,12 @@ class ReviewerModel(T5ForConditionalGeneration):
             decoder_input_ids,
             attention_mask,
             decoder_attention_mask,
-            encoder_loss=True
+            encoder_loss=True,
+            explain_label=None,
+            tokenizer=None,
+            casual_model=None,
+            casual_tokenizer=None,
+            local_rank=None
     ):
         encoder_outputs = self.encoder( \
             input_ids=input_ids,
@@ -155,7 +184,15 @@ class ReviewerModel(T5ForConditionalGeneration):
             if encoder_loss and input_labels is not None:
                 cls_loss_fct = CrossEntropyLoss(ignore_index=-100)
                 loss += cls_loss_fct(cls_logits.view(-1, cls_logits.size(-1)), input_labels.view(-1))
+            # 添加解释性损失函数
+            if explain_label != None:
+                explain_loss_fct = CrossEntropyLoss(ignore_index=-100)
+                output_texts = [tokenizer.decode(torch.argmax(logit, dim=-1)) for logit in lm_logits]
+                explain_pred = predict(casual_model, casual_tokenizer, output_texts, local_rank)
+                explanatory_loss = explain_loss_fct(explain_pred.view(-1, explain_pred.size(-1)), explain_label.view(-1))
+                loss += explanatory_loss
             return loss
+
         return cls_logits, lm_logits
 
 

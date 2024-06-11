@@ -584,7 +584,7 @@ class SimpleGenDataset(TextDataset):
         savep = file_path.replace(".jsonl", tokenizer_type + ".simpgenexps")
 
         # 如果预处理后的特征文件存在，则从文件加载，否则从原始数据处理。
-        if os.path.exists(savep):
+        if os.path.exists(savep) :
             logger.info("Loading examples from {}".format(savep))  # 从文件加载示例
             self.feats = torch.load(savep)
         else:
@@ -608,6 +608,8 @@ class SimpleGenDataset(TextDataset):
         # 处理 diff，移除初始行和任何空行
         difflines = diff.split("\n")[1:]
         difflines = [line for line in difflines if line.strip()]  # 去掉空行
+
+        has_explain = dic.get("has_explain", 0)
 
         # 映射每行 diff 的第一个字符到数字标签
         map_dic = {"-": 0, "+": 1, " ": 2}  # 映射 diff 符号到数字
@@ -654,7 +656,7 @@ class SimpleGenDataset(TextDataset):
         input_labels = [-100] * len(source_ids)
 
         # 返回处理好的特征
-        return ReviewFeatures(dic["idx"], source_ids, input_labels, target_ids, type="genmsg")
+        return ReviewFeatures(dic["idx"], source_ids, input_labels, target_ids, "genmsg", has_explain)
 
 
 class InputFeatures(object):
@@ -668,13 +670,14 @@ class InputFeatures(object):
 
 
 class ReviewFeatures(object):
-    def __init__(self, example_id, source_ids, source_labels, target_ids, type):
+    def __init__(self, example_id, source_ids, source_labels, target_ids, type, has_explain):
         self.example_id = example_id
         self.source_ids = source_ids
         self.source_labels = source_labels
         self.target_ids = target_ids
         assert type in ("label", "line", "genmsg", "daemsg")
         self.type = type
+        self.has_explain = has_explain
 
 
 class ClsFeatures(object):
@@ -1053,6 +1056,32 @@ def add_target_focus(json_path, output_path):
             f.write(json.dumps(obj) + '\n')
 
 
+def read_explain(file_path):
+    explains = {}
+    with open(file_path, 'r') as f:
+        # 跳过第一行
+        next(f)
+        for line in f:
+            parts = line.strip().split('\t')
+            if len(parts) >= 3:
+                key = parts[0]
+                seq_pred = int(parts[1])
+                explains[key] = seq_pred
+    return explains
+
+
+def add_explain_info(json_path, explain_path, new_file_path):
+    json_data = read_jsonl(json_path)
+    explain_data = read_explain(explain_path)
+
+    for idx, data in enumerate(json_data):
+        key = f"dcorpus_ddocid_{idx}_0"
+        data['has_explain'] = explain_data.get(key, None)
+
+    with open(new_file_path, 'w') as f:
+        print(f"Writing to {new_file_path}...")
+        for obj in json_data:
+            f.write(json.dumps(obj) + '\n')
 
 
 if __name__ == '__main__':
@@ -1089,6 +1118,18 @@ if __name__ == '__main__':
     # all_msg = get_all_msg(json_path=jsonl_file)
     # save_to_csv(all_msg, csv_file)
 
-    json_file = r'/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-test-focus-label.jsonl'
-    output_file = r'/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-test-focus-label.jsonl'
-    add_target_focus(json_file, output_file)
+    # 添加目标关注点信息
+    # json_file = r'/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-test-focus-label.jsonl'
+    # output_file = r'/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-test-focus-label.jsonl'
+    # add_target_focus(json_file, output_file)
+
+    # 添加has_explain信息
+    json_file = r'/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-focus-label-explain.jsonl'
+    explain_file = r'/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-explain.txt'
+    new_json_file = r'/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-focus-label-explain.jsonl'
+
+    json_file = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-train-explain.jsonl"
+    explain_file = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-train-explain.txt"
+    new_json_file = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-train-explain.jsonl"
+
+    add_explain_info(json_file, explain_file, new_json_file)
