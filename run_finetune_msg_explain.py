@@ -12,7 +12,6 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data import ConcatDataset
 from torch.utils.data.distributed import DistributedSampler
 from transformers import AdamW, get_linear_schedule_with_warmup
-from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer
 from models import build_or_load_gen_model
 from configs import add_args, set_seed, set_dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -20,7 +19,6 @@ import torch.distributed as dist
 from utils import CommentGenDataset, SimpleGenDataset
 from evaluator.smooth_bleu import bleu_fromstr
 import wandb
-from casual import load_model_and_tokenizer
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -29,7 +27,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-exp_name = "all" + time.strftime("-%Y%m%d-%H_%M_%S", time.localtime(int(round(time.time() * 1000)) / 1000))
+exp_name = "explain_exp" + time.strftime("-%Y%m%d-%H_%M_%S", time.localtime(int(round(time.time() * 1000)) / 1000))
 wandb_project_name = "My_Code_Reviewer"
 
 
@@ -119,8 +117,8 @@ def main(args):
     dist.init_process_group(backend="nccl")
     local_rank = dist.get_rank() % args.gpu_per_node
     args.global_rank = local_rank + args.node_index * args.gpu_per_node
-    local_rank = 1
     args.local_rank = local_rank
+    args.local_rank = 1
     args.world_size = dist.get_world_size()
     logger.warning("Process rank: %s, global rank: %s, world size: %s, bs: %s",
                    args.local_rank, args.global_rank, \
@@ -133,11 +131,6 @@ def main(args):
 
     # 使用 DDP（DistributedDataParallel）将模型移动到 GPU 上，并设置多 GPU 训练
     model = DDP(model.cuda(), device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
-
-    # 创建seq 和 tok 模型和分词器
-    if args.has_explain:
-        seq_model, seq_tokenizer = load_model_and_tokenizer('seq', args.casual_seq_model_path)
-        tok_model, tok_tokenizer = load_model_and_tokenizer('tok', args.casual_tok_model_path)
 
     # 创建多进程池
     pool = multiprocessing.Pool(args.cpu_count)
@@ -225,7 +218,7 @@ def main(args):
         model.train()
         nb_tr_examples, nb_tr_steps, tr_loss = 0, 0, 0
         for _, _, train_dataloader in get_loaders(train_files, args, tokenizer, pool):  # WARNING: this is an iterator, to save memory
-            for step, examples in tqdm(enumerate(train_dataloader, 1)):
+            for step, examples in enumerate(train_dataloader, 1):
                 if step == 1:
                     # 打印第一个批次的信息
                     # ex = examples[0]
@@ -246,30 +239,15 @@ def main(args):
                 source_mask = source_ids.ne(tokenizer.pad_id)
                 target_mask = target_ids.ne(tokenizer.pad_id)
 
-                # 原始计算loss所需的参数
-                params = {
-                    'input_ids': source_ids,
-                    'input_labels': source_labels,
-                    'decoder_input_ids': target_ids,
-                    'attention_mask': source_mask,
-                    'decoder_attention_mask': target_mask,
-                    'encoder_loss': False
-                }
-
-                # 如果需要解释性训练，则获取解释性标签，并且添加相应参数
-                if args.has_explain:
-                    params.update({
-                        'explain_label': torch.tensor([ex.has_explain for ex in examples], dtype=torch.long).to(local_rank),
-                        'tokenizer': tokenizer,
-                        'seq_model': seq_model,
-                        'seq_tokenizer': seq_tokenizer,
-                        'tok_model': tok_model,
-                        'tok_tokenizer': tok_tokenizer,
-                        'local_rank': local_rank
-                    })
-
-                # 计算损失函数
-                loss = model(**params)
+                # 计算模型的损失
+                loss = model(
+                    input_ids=source_ids,
+                    input_labels=source_labels,
+                    decoder_input_ids=target_ids,
+                    attention_mask=source_mask,
+                    decoder_attention_mask=target_mask,
+                    encoder_loss=False
+                )
 
                 if args.gpu_per_node > 1:
                     loss = loss.mean()  # mean() to average on multi-gpu.
@@ -396,12 +374,8 @@ if __name__ == "__main__":
 
     args.save_interval_epochs = 100
 
-    args.has_focus = True
+    args.has_focus = False
     args.focus_len = 10
-
-    args.has_explain = True
-    args.casual_seq_model_path = "/data/lyf/code/Code_Reviewer/3_Pretrained_Model/seq-baseline"
-    args.casual_tok_model_path = "/data/lyf/code/Code_Reviewer/3_Pretrained_Model/tok-baseline"
 
     logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
     logger.info(args)

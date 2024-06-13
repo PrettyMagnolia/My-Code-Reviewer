@@ -6,9 +6,11 @@ from copy import deepcopy as cp
 from torch.utils.data import Dataset
 from tokenizers import ByteLevelBPETokenizer
 from transformers import T5Tokenizer, RobertaTokenizer
+from transformers import AutoConfig, AutoModelForSequenceClassification, AutoTokenizer
 from matplotlib import pyplot as plt
 import seaborn as sns
 import nltk
+from casual import seq_predict, load_model_and_tokenizer
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -584,7 +586,7 @@ class SimpleGenDataset(TextDataset):
         savep = file_path.replace(".jsonl", tokenizer_type + ".simpgenexps")
 
         # 如果预处理后的特征文件存在，则从文件加载，否则从原始数据处理。
-        if os.path.exists(savep) :
+        if os.path.exists(savep):
             logger.info("Loading examples from {}".format(savep))  # 从文件加载示例
             self.feats = torch.load(savep)
         else:
@@ -1084,6 +1086,26 @@ def add_explain_info(json_path, explain_path, new_file_path):
             f.write(json.dumps(obj) + '\n')
 
 
+def calculate_casual_percent(model_name_or_path, file_path, cache_dir=None):
+    model, tokenizer = load_model_and_tokenizer(model_name_or_path, cache_dir)
+    with open(file_path, 'r', encoding='utf-8') as file:
+        lines = file.readlines()
+        lines = [line.strip() for line in lines]
+    local_rank = 1
+    logits = predict(model, tokenizer, lines, local_rank)
+    # 对logits进行argmax操作
+    predictions = torch.argmax(logits, dim=1)
+
+    # 统计标签1的个数
+    count_label_1 = (predictions == 1).sum().item()
+
+    # 计算标签1的百分比
+    total_predictions = predictions.size(0)
+    percent_label_1 = (count_label_1 / total_predictions) * 100
+
+    return count_label_1, percent_label_1
+
+
 if __name__ == '__main__':
     # 读取jsonl
     # file_path = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-train.jsonl"
@@ -1124,12 +1146,19 @@ if __name__ == '__main__':
     # add_target_focus(json_file, output_file)
 
     # 添加has_explain信息
-    json_file = r'/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-focus-label-explain.jsonl'
-    explain_file = r'/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-explain.txt'
-    new_json_file = r'/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-focus-label-explain.jsonl'
+    # json_file = r'/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-focus-label-explain.jsonl'
+    # explain_file = r'/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-explain.txt'
+    # new_json_file = r'/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-train-focus-label-explain.jsonl'
+    #
+    # json_file = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-train-explain.jsonl"
+    # explain_file = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-train-explain.txt"
+    # new_json_file = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-train-explain.jsonl"
+    #
+    # add_explain_info(json_file, explain_file, new_json_file)
 
-    json_file = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-train-explain.jsonl"
-    explain_file = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-train-explain.txt"
-    new_json_file = r"E:\0_Code\postgraduate\CodeReviewer\2_Dataset\Comment_Generation\msg-train-explain.jsonl"
-
-    add_explain_info(json_file, explain_file, new_json_file)
+    # 计算解释性信息占比
+    casual_seq_model_path = "/data/lyf/code/Code_Reviewer/2_Dataset/seq-baseline"
+    file_name = r'/data/lyf/code/Code_Reviewer/0_Result/1_preds_only_reinforce/preds_origin_topk1.txt'
+    count, percent = calculate_casual_percent(casual_seq_model_path, file_name)
+    print(f"标签1的个数: {count}")
+    print(f"标签1的百分比: {percent:.2f}%")

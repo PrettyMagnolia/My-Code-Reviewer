@@ -17,7 +17,7 @@ from transformers import (
     T5Tokenizer,
 )
 import logging
-from casual import predict
+from casual import seq_predict, tok_predict
 
 logger = logging.getLogger(__name__)
 
@@ -86,35 +86,19 @@ class ReviewerModel(T5ForConditionalGeneration):
             decoder_input_ids = kwargs["decoder_input_ids"]
             attention_mask = kwargs["attention_mask"]
             decoder_attention_mask = kwargs["decoder_attention_mask"]
-            if "encoder_loss" not in kwargs:
-                encoder_loss = True
-            else:
-                encoder_loss = kwargs["encoder_loss"]
+            encoder_loss = kwargs.get("encoder_loss", True)
 
             # 用于解释性信息
-            if "explain_label" not in kwargs:
-                explain_label = None
-            else:
-                explain_label = kwargs["explain_label"]
-            if "tokenizer" not in kwargs:
-                tokenizer = None
-            else:
-                tokenizer = kwargs["tokenizer"]
-            if "casual_model" not in kwargs:
-                casual_model = None
-            else:
-                casual_model = kwargs["casual_model"]
-            if "casual_tokenizer" not in kwargs:
-                casual_tokenizer = None
-            else:
-                casual_tokenizer = kwargs["casual_tokenizer"]
-            if "local_rank" not in kwargs:
-                local_rank = None
-            else:
-                local_rank = kwargs["local_rank"]
+            explain_label = kwargs.get("explain_label", None)
+            tokenizer = kwargs.get("tokenizer", None)
+            seq_model = kwargs.get("seq_model", None)
+            seq_tokenizer = kwargs.get("seq_tokenizer", None)
+            tok_model = kwargs.get("tok_model", None)
+            tok_tokenizer = kwargs.get("tok_tokenizer", None)
+            local_rank = kwargs.get("local_rank", None)
 
-            return self.review_forward(input_ids, input_labels, decoder_input_ids, attention_mask,
-                                       decoder_attention_mask, encoder_loss, explain_label, tokenizer, casual_model, casual_tokenizer, local_rank)
+            return self.review_forward(input_ids, input_labels, decoder_input_ids, attention_mask, decoder_attention_mask, encoder_loss,
+                                       explain_label, tokenizer, seq_model, seq_tokenizer, tok_model, tok_tokenizer, local_rank)
         return super().forward(*argv, **kwargs)
 
     def cls(
@@ -149,8 +133,10 @@ class ReviewerModel(T5ForConditionalGeneration):
             encoder_loss=True,
             explain_label=None,
             tokenizer=None,
-            casual_model=None,
-            casual_tokenizer=None,
+            seq_model=None,
+            seq_tokenizer=None,
+            tok_model=None,
+            tok_tokenizer=None,
             local_rank=None
     ):
         encoder_outputs = self.encoder( \
@@ -180,7 +166,9 @@ class ReviewerModel(T5ForConditionalGeneration):
         lm_logits = self.lm_head(sequence_output)
         if decoder_input_ids is not None:
             lm_loss_fct = CrossEntropyLoss(ignore_index=0)  # Warning: PAD_ID should be 0
-            loss = lm_loss_fct(lm_logits.view(-1, lm_logits.size(-1)), decoder_input_ids.view(-1))
+            loss = 0
+            lm_loss = lm_loss_fct(lm_logits.view(-1, lm_logits.size(-1)), decoder_input_ids.view(-1))
+            loss += lm_loss
             if encoder_loss and input_labels is not None:
                 cls_loss_fct = CrossEntropyLoss(ignore_index=-100)
                 loss += cls_loss_fct(cls_logits.view(-1, cls_logits.size(-1)), input_labels.view(-1))
@@ -188,9 +176,35 @@ class ReviewerModel(T5ForConditionalGeneration):
             if explain_label != None:
                 explain_loss_fct = CrossEntropyLoss(ignore_index=-100)
                 output_texts = [tokenizer.decode(torch.argmax(logit, dim=-1)) for logit in lm_logits]
-                explain_pred = predict(casual_model, casual_tokenizer, output_texts, local_rank)
-                explanatory_loss = explain_loss_fct(explain_pred.view(-1, explain_pred.size(-1)), explain_label.view(-1))
+                explain_pred = seq_predict(seq_model, seq_tokenizer, output_texts, local_rank)
+                # 和标签1（有解释性信息）计算交叉熵损失函数
+                explanatory_loss = explain_loss_fct(explain_pred.view(-1, explain_pred.size(-1)), torch.ones_like(explain_label.view(-1)))
                 loss += explanatory_loss
+
+                filtered_logits = []
+                filtered_labels = []
+                # 额外调用tok识别模型，修正lm_loss损失函数
+                for text, logit, label_id, e_label_true, e_label_pred in zip(output_texts, lm_logits, decoder_input_ids, explain_label, explain_pred):
+                    if e_label_true == 0 and torch.argmax(e_label_pred, dim=-1) == 1:
+                        # [0]用于筛选当前的结果
+                        tok_pred = tok_predict(tok_model, tok_tokenizer, [text], local_rank)[0]
+                        new_token = tokenizer.encode(tok_pred, return_tensors='pt')[0]
+
+                        new_token_ids = new_token.tolist()
+                        logit_ids = torch.argmax(logit, dim=-1)
+                        mask = torch.tensor([logit_id in new_token_ids for logit_id in logit_ids], device=logit.device)
+
+                        logit = logit[mask]
+                        label_id = label_id[:logit.size(0)]
+
+                    filtered_logits.append(logit)
+                    filtered_labels.append(label_id)
+                if len(filtered_logits) != 0:
+                    filtered_logits = torch.cat(filtered_logits, dim=0)
+                    filtered_labels = torch.cat(filtered_labels, dim=0)
+                    new_lm_loss = lm_loss_fct(filtered_logits.view(-1, filtered_logits.size(-1)), filtered_labels.view(-1))
+                    # 修正loss值
+                    loss = loss - lm_loss + new_lm_loss
             return loss
 
         return cls_logits, lm_logits

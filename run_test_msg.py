@@ -264,10 +264,10 @@ if __name__ == "__main__":
     # 服务器配置
     args.file_name = "checkpoints-57600-"
     args.model_name_or_path = '/data/lyf/code/Code_Reviewer/3_Pretrained_Model'
-    # args.model_name_or_path = '/data/lyf/code/Code_Reviewer/0_Result/{}'.format(args.file_name)
-    args.output_dir = '/data/lyf/code/Code_Reviewer/0_Result/preds'
+    args.model_name_or_path = '/data/lyf/code/Code_Reviewer/0_Result/2_only_explain_model'
+    args.output_dir = '/data/lyf/code/Code_Reviewer/0_Result'
     args.load_model_path = '/data/lyf/code/Code_Reviewer/3_Pretrained_Model'
-    # args.load_model_path = '/data/lyf/code/Code_Reviewer/0_Result/{}'.format(args.file_name)
+    args.load_model_path = '/data/lyf/code/Code_Reviewer/0_Result/2_only_explain_model'
     # args.eval_file = '/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/train_part_{}.jsonl'.format(part)
     args.eval_file = '/data/lyf/code/Code_Reviewer/2_Dataset/Comment_Generation/msg-test-focus-label.jsonl'
     args.exp_time = time.strftime("-%Y%m%d-%H_%M_%S", time.localtime(int(round(time.time() * 1000)) / 1000))
@@ -279,6 +279,7 @@ if __name__ == "__main__":
     args.do_test = True
 
     args.topk = 10
+    args.preds_file_name = 'preds_{}.txt'.format(args.topk)
 
     # # 本地配置
     # args.model_name_or_path = r'E:\0_Code\postgraduate\CodeReviewer\3_Pretrained_Model'
