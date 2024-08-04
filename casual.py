@@ -43,7 +43,7 @@ def seq_predict(model, tokenizer, texts, device):
     model.eval()
     all_logits = []
 
-    for text in texts:
+    for text in tqdm(texts):
         inputs = preprocess_data(tokenizer, text)
         inputs = {key: val.to(device) for key, val in inputs.items()}
 

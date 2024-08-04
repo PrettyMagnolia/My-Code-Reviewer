@@ -1092,7 +1092,7 @@ def calculate_casual_percent(model_name_or_path, file_path, cache_dir=None):
         lines = file.readlines()
         lines = [line.strip() for line in lines]
     local_rank = 1
-    logits = predict(model, tokenizer, lines, local_rank)
+    logits = seq_predict(model, tokenizer, lines, local_rank)
     # 对logits进行argmax操作
     predictions = torch.argmax(logits, dim=1)
 
